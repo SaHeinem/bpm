@@ -1,12 +1,18 @@
+import { useMemo, useRef, useState } from "react"
+import { useForm } from "react-hook-form"
+import { zodResolver } from "@hookform/resolvers/zod"
+import Papa from "papaparse"
+import { z } from "zod"
+import { Pencil, Plus, Trash2, UploadCloud } from "lucide-react"
 
-import { useState } from "react"
+import { useParticipants } from "@/hooks/use-participants"
+import { useRestaurants } from "@/hooks/use-restaurants"
+import { useAssignments } from "@/hooks/use-assignments"
+import { useToast } from "@/hooks/use-toast"
+import { cn } from "@/lib/utils"
+
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
-import { Switch } from "@/components/ui/switch"
-import { Textarea } from "@/components/ui/textarea"
-import { Label } from "@/components/ui/label"
 import {
   Dialog,
   DialogContent,
@@ -15,258 +21,685 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { Search, UserX, MessageSquare, RefreshCw } from "lucide-react"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog"
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form"
+import { Input } from "@/components/ui/input"
+import { Switch } from "@/components/ui/switch"
+import { Badge } from "@/components/ui/badge"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { Spinner } from "@/components/ui/spinner"
 
-// Mock data - replace with real API data
-const mockPeople = [
-  {
-    id: 1,
-    name: "Alice Johnson",
-    email: "alice@example.com",
-    noShow: false,
-    restaurant: "La Bella Vista",
-    comments: "",
-    lastUpdated: "2025-01-14T10:30:00",
-    updatedBy: "admin@example.com",
-  },
-  {
-    id: 2,
-    name: "Bob Smith",
-    email: "bob@example.com",
-    noShow: true,
-    restaurant: null,
-    comments: "Called to cancel",
-    lastUpdated: "2025-01-14T09:15:00",
-    updatedBy: "admin@example.com",
-  },
-  {
-    id: 3,
-    name: "Carol White",
-    email: "carol@example.com",
-    noShow: false,
-    restaurant: "Sushi Palace",
-    comments: "",
-    lastUpdated: "2025-01-14T08:00:00",
-    updatedBy: "system",
-  },
-  {
-    id: 4,
-    name: "David Brown",
-    email: "david@example.com",
-    noShow: false,
-    restaurant: "The Steakhouse",
-    comments: "VIP guest",
-    lastUpdated: "2025-01-13T16:45:00",
-    updatedBy: "manager@example.com",
-  },
-  {
-    id: 5,
-    name: "Emma Davis",
-    email: "emma@example.com",
-    noShow: false,
-    restaurant: "La Bella Vista",
-    comments: "",
-    lastUpdated: "2025-01-14T11:20:00",
-    updatedBy: "system",
-  },
-]
+const participantSchema = z.object({
+  pretix_id: z.string().min(1, "Pretix ID is required"),
+  given_name: z.string().min(1, "Given name is required"),
+  family_name: z.string().min(1, "Family name is required"),
+  attendee_name: z.string().min(1, "Attendee display name is required"),
+  attendee_email: z.string().email("A valid email is required"),
+  is_table_captain: z.boolean(),
+  captain_phone: z.string().trim().min(1).optional(),
+  captain_preferred_contact: z.enum(["email", "phone", "sms", "whatsapp", "telegram"]).optional(),
+  status: z.enum(["registered", "cancelled", "late_joiner"]),
+})
+
+type ParticipantFormValues = z.infer<typeof participantSchema>
+
+type DialogMode = "create" | "edit"
+
+interface ParticipantDialogState {
+  open: boolean
+  mode: DialogMode
+  participantId?: string
+}
+
+type ParticipantCsvRow = {
+  pretix_id?: string
+  given_name?: string
+  family_name?: string
+  attendee_name?: string
+  attendee_email?: string
+  is_table_captain?: string | boolean
+  captain_phone?: string
+  captain_preferred_contact?: string
+  status?: string
+}
+
+const initialParticipantValues: ParticipantFormValues = {
+  pretix_id: "",
+  given_name: "",
+  family_name: "",
+  attendee_name: "",
+  attendee_email: "",
+  is_table_captain: false,
+  captain_phone: undefined,
+  captain_preferred_contact: undefined,
+  status: "registered",
+}
+
+type StatusFilter = "all" | ParticipantFormValues["status"]
+type CaptainFilter = "all" | "captain" | "attendee"
+
+const statusBadgeStyles: Record<ParticipantFormValues["status"], string> = {
+  registered: "bg-success/10 text-success",
+  cancelled: "bg-destructive/10 text-destructive",
+  late_joiner: "bg-warning/10 text-warning",
+}
 
 export function PeopleManagement() {
-  const [searchQuery, setSearchQuery] = useState("")
-  const [people, setPeople] = useState(mockPeople)
-  const [selectedPerson, setSelectedPerson] = useState<(typeof mockPeople)[0] | null>(null)
-  const [commentDialogOpen, setCommentDialogOpen] = useState(false)
-  const [newComment, setNewComment] = useState("")
+  const { participants, isLoading, createParticipant, editParticipant, removeParticipant, bulkImportParticipants } =
+    useParticipants()
+  const { restaurants } = useRestaurants()
+  const { assignments } = useAssignments()
+  const { toast } = useToast()
 
-  const filteredPeople = people.filter(
-    (person) =>
-      person.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      person.email.toLowerCase().includes(searchQuery.toLowerCase()),
+  const [dialogState, setDialogState] = useState<ParticipantDialogState>({ open: false, mode: "create" })
+  const [searchTerm, setSearchTerm] = useState("")
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>("all")
+  const [captainFilter, setCaptainFilter] = useState<CaptainFilter>("all")
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
+
+  const form = useForm<ParticipantFormValues>({
+    resolver: zodResolver(participantSchema),
+    defaultValues: initialParticipantValues,
+  })
+
+  const restaurantById = useMemo(() => new Map(restaurants.map((restaurant) => [restaurant.id, restaurant])), [restaurants])
+  const assignmentByParticipant = useMemo(
+    () =>
+      assignments.reduce<Record<string, string>>((acc, assignment) => {
+        acc[assignment.participant_id] = assignment.restaurant_id
+        return acc
+      }, {}),
+    [assignments],
   )
 
-  const handleNoShowToggle = (personId: number) => {
-    setPeople(
-      people.map((person) =>
-        person.id === personId
-          ? { ...person, noShow: !person.noShow, lastUpdated: new Date().toISOString(), updatedBy: "admin@example.com" }
-          : person,
-      ),
-    )
+  const filteredParticipants = useMemo(() => {
+    return participants.filter((participant) => {
+      const matchesSearch =
+        searchTerm.length === 0 ||
+        participant.attendee_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        participant.attendee_email.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        participant.pretix_id.toLowerCase().includes(searchTerm.toLowerCase())
+
+      const matchesStatus = statusFilter === "all" || participant.status === statusFilter
+      const matchesCaptain =
+        captainFilter === "all" ||
+        (captainFilter === "captain" && participant.is_table_captain) ||
+        (captainFilter === "attendee" && !participant.is_table_captain)
+
+      return matchesSearch && matchesStatus && matchesCaptain
+    })
+  }, [participants, searchTerm, statusFilter, captainFilter])
+
+  const totalRegistered = useMemo(
+    () => participants.filter((participant) => participant.status === "registered" || participant.status === "late_joiner").length,
+    [participants],
+  )
+
+  const totalCaptains = useMemo(
+    () => participants.filter((participant) => participant.is_table_captain && participant.status !== "cancelled").length,
+    [participants],
+  )
+
+  const openDialog = (mode: DialogMode, participantId?: string) => {
+    if (mode === "edit" && participantId) {
+      const participant = participants.find((item) => item.id === participantId)
+      if (participant) {
+        form.reset({
+          pretix_id: participant.pretix_id,
+          given_name: participant.given_name,
+          family_name: participant.family_name,
+          attendee_name: participant.attendee_name,
+          attendee_email: participant.attendee_email,
+          is_table_captain: participant.is_table_captain,
+          captain_phone: participant.captain_phone ?? undefined,
+          captain_preferred_contact: participant.captain_preferred_contact as ParticipantFormValues["captain_preferred_contact"],
+          status: participant.status,
+        })
+      }
+    } else {
+      form.reset(initialParticipantValues)
+    }
+    setDialogState({ open: true, mode, participantId })
   }
 
-  const handleAddComment = () => {
-    if (selectedPerson && newComment.trim()) {
-      setPeople(
-        people.map((person) =>
-          person.id === selectedPerson.id
-            ? { ...person, comments: newComment, lastUpdated: new Date().toISOString(), updatedBy: "admin@example.com" }
-            : person,
-        ),
-      )
-      setNewComment("")
-      setCommentDialogOpen(false)
-      setSelectedPerson(null)
+  const closeDialog = () => {
+    setDialogState((prev) => ({ ...prev, open: false }))
+  }
+
+  const handleSubmit = async (values: ParticipantFormValues) => {
+    try {
+      if (dialogState.mode === "create") {
+        await createParticipant.mutateAsync({
+          pretix_id: values.pretix_id,
+          given_name: values.given_name,
+          family_name: values.family_name,
+          attendee_name: values.attendee_name,
+          attendee_email: values.attendee_email,
+          is_table_captain: values.is_table_captain,
+          captain_phone: values.captain_phone?.trim() ? values.captain_phone.trim() : null,
+          captain_preferred_contact: values.captain_preferred_contact ?? null,
+          status: values.status,
+        })
+        toast({
+          title: "Participant added",
+          description: `${values.attendee_name} has been added.`,
+        })
+      } else if (dialogState.mode === "edit" && dialogState.participantId) {
+        await editParticipant.mutateAsync({
+          id: dialogState.participantId,
+          payload: {
+            pretix_id: values.pretix_id,
+            given_name: values.given_name,
+            family_name: values.family_name,
+            attendee_name: values.attendee_name,
+            attendee_email: values.attendee_email,
+            is_table_captain: values.is_table_captain,
+            captain_phone: values.captain_phone?.trim() ? values.captain_phone.trim() : null,
+            captain_preferred_contact: values.captain_preferred_contact ?? null,
+            status: values.status,
+          },
+        })
+        toast({
+          title: "Participant updated",
+          description: `${values.attendee_name}'s profile has been saved.`,
+        })
+      }
+      closeDialog()
+    } catch (error) {
+      console.error(error)
+      toast({
+        title: "Unable to save participant",
+        description: error instanceof Error ? error.message : "Please try again.",
+        variant: "destructive",
+      })
     }
   }
 
-  const syncFromAPI = () => {
-    console.log("Syncing people from external API...")
-    // Implement API sync logic
+  const handleDelete = async (participantId: string) => {
+    const participant = participants.find((item) => item.id === participantId)
+    if (!participant) return
+    try {
+      await removeParticipant.mutateAsync(participantId)
+      toast({
+        title: "Participant removed",
+        description: `${participant.attendee_name} has been removed.`,
+      })
+    } catch (error) {
+      console.error(error)
+      toast({
+        title: "Unable to remove participant",
+        description: error instanceof Error ? error.message : "Please try again.",
+        variant: "destructive",
+      })
+    }
+  }
+
+  const handleImportClick = () => {
+    fileInputRef.current?.click()
+  }
+
+  const handleFileChange: React.ChangeEventHandler<HTMLInputElement> = async (event) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+
+    try {
+      const parsed = await new Promise<Papa.ParseResult<ParticipantCsvRow>>((resolve, reject) => {
+        Papa.parse<ParticipantCsvRow>(file, {
+          header: true,
+          skipEmptyLines: true,
+          transformHeader: (header: string) => header.trim().toLowerCase(),
+          complete: resolve,
+          error: reject,
+        })
+      })
+
+      if (parsed.errors.length > 0) {
+        throw new Error(parsed.errors[0].message)
+      }
+
+      const payload = parsed.data
+        .filter((row) => Boolean(row.pretix_id) && Boolean(row.attendee_email))
+        .map((row) => ({
+          pretix_id: String(row.pretix_id),
+          given_name: row.given_name ? String(row.given_name) : "",
+          family_name: row.family_name ? String(row.family_name) : "",
+          attendee_name: row.attendee_name
+            ? String(row.attendee_name)
+            : `${row.given_name ?? ""} ${row.family_name ?? ""}`.trim(),
+          attendee_email: String(row.attendee_email),
+          is_table_captain:
+            typeof row.is_table_captain === "boolean"
+              ? row.is_table_captain
+              : String(row.is_table_captain ?? "").toLowerCase() === "true",
+          captain_phone: row.captain_phone ? String(row.captain_phone) : null,
+          captain_preferred_contact: row.captain_preferred_contact ? String(row.captain_preferred_contact) : null,
+          status:
+            row.status && ["registered", "cancelled", "late_joiner"].includes(String(row.status))
+              ? (String(row.status) as ParticipantFormValues["status"])
+              : "registered",
+        }))
+
+      if (!payload.length) {
+        toast({
+          title: "No rows imported",
+          description: "We could not find any valid rows in that CSV.",
+        })
+        return
+      }
+
+      await bulkImportParticipants.mutateAsync(payload)
+      toast({
+        title: "Participants imported",
+        description: `${payload.length} participants processed successfully.`,
+      })
+    } catch (error) {
+      console.error(error)
+      toast({
+        title: "Import failed",
+        description:
+          error instanceof Error
+            ? error.message
+            : "We could not parse that CSV. Please ensure it includes Pretix ID and Email columns.",
+        variant: "destructive",
+      })
+    } finally {
+      event.target.value = ""
+    }
   }
 
   return (
     <div className="space-y-6 p-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-3xl font-bold tracking-tight text-foreground">People Management</h2>
-          <p className="text-muted-foreground">Manage attendees and track no-shows</p>
+          <h2 className="text-3xl font-bold tracking-tight text-foreground">Participant Management</h2>
+          <p className="text-muted-foreground">Keep attendee information up-to-date and ready for assignment.</p>
         </div>
-        <Button onClick={syncFromAPI} variant="outline" className="gap-2 bg-transparent">
-          <RefreshCw className="h-4 w-4" />
-          Sync from API
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" className="gap-2 bg-transparent" onClick={handleImportClick}>
+            <UploadCloud className="h-4 w-4" />
+            Import CSV
+          </Button>
+          <Button className="gap-2" onClick={() => openDialog("create")}>
+            <Plus className="h-4 w-4" />
+            Add Participant
+          </Button>
+          <input ref={fileInputRef} type="file" accept=".csv,text/csv" className="hidden" onChange={handleFileChange} />
+        </div>
       </div>
 
-      {/* Stats */}
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid gap-4 md:grid-cols-4">
         <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium">Total Attendees</CardTitle>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium">Total Participants</CardTitle>
+            <CardDescription>Imported from Pretix</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{people.length}</div>
+            <p className="text-2xl font-semibold">{participants.length}</p>
           </CardContent>
         </Card>
         <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium">Confirmed</CardTitle>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium">Eligible Participants</CardTitle>
+            <CardDescription>Registered & late joiners</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-success">{people.filter((p) => !p.noShow).length}</div>
+            <p className="text-2xl font-semibold text-success">{totalRegistered}</p>
           </CardContent>
         </Card>
         <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-sm font-medium">No-Shows</CardTitle>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium">Captains Ready</CardTitle>
+            <CardDescription>Available table captains</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-destructive">{people.filter((p) => p.noShow).length}</div>
+            <p className="text-2xl font-semibold">{totalCaptains}</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium">Assignments</CardTitle>
+            <CardDescription>Participants currently placed</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <p className="text-2xl font-semibold">{Object.keys(assignmentByParticipant).length}</p>
           </CardContent>
         </Card>
       </div>
 
-      {/* Search */}
       <Card>
         <CardHeader>
-          <CardTitle>Search People</CardTitle>
-          <CardDescription>Find attendees by name or email</CardDescription>
+          <CardTitle>Filters</CardTitle>
+          <CardDescription>Filter by status or captain availability.</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="relative">
-            <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+          <div className="flex flex-col gap-3 md:flex-row">
             <Input
-              placeholder="Search by name or email..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-9"
+              placeholder="Search by name, email, or Pretix ID…"
+              value={searchTerm}
+              onChange={(event) => setSearchTerm(event.target.value)}
+              className="md:max-w-xs"
             />
+            <Select value={statusFilter} onValueChange={(value: StatusFilter) => setStatusFilter(value)}>
+              <SelectTrigger className="md:max-w-xs">
+                <SelectValue placeholder="Status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Statuses</SelectItem>
+                <SelectItem value="registered">Registered</SelectItem>
+                <SelectItem value="late_joiner">Late joiner</SelectItem>
+                <SelectItem value="cancelled">Cancelled</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select value={captainFilter} onValueChange={(value: CaptainFilter) => setCaptainFilter(value)}>
+              <SelectTrigger className="md:max-w-xs">
+                <SelectValue placeholder="Captain filter" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Captains & attendees</SelectItem>
+                <SelectItem value="captain">Captains only</SelectItem>
+                <SelectItem value="attendee">Attendees only</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
         </CardContent>
       </Card>
 
-      {/* People List */}
       <Card>
         <CardHeader>
-          <CardTitle>Attendees ({filteredPeople.length})</CardTitle>
-          <CardDescription>Manage attendance status and add comments</CardDescription>
+          <CardTitle>Participants ({filteredParticipants.length})</CardTitle>
+          <CardDescription>Update attendee data or remove cancellations.</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="space-y-3">
-            {filteredPeople.map((person) => (
-              <div
-                key={person.id}
-                className={`flex items-center justify-between rounded-lg border p-4 transition-colors ${
-                  person.noShow ? "border-destructive/50 bg-destructive/5" : "border-border bg-card"
-                }`}
-              >
-                <div className="flex-1 space-y-1">
-                  <div className="flex items-center gap-2">
-                    <p
-                      className={`font-medium ${person.noShow ? "text-muted-foreground line-through" : "text-foreground"}`}
-                    >
-                      {person.name}
-                    </p>
-                    {person.noShow && (
-                      <Badge variant="destructive" className="gap-1">
-                        <UserX className="h-3 w-3" />
-                        No-Show
-                      </Badge>
-                    )}
-                    {person.comments && (
-                      <Badge variant="outline" className="gap-1">
-                        <MessageSquare className="h-3 w-3" />
-                        Has comment
-                      </Badge>
-                    )}
-                  </div>
-                  <p className="text-sm text-muted-foreground">{person.email}</p>
-                  {person.restaurant && !person.noShow && (
-                    <p className="text-sm text-primary">Assigned to: {person.restaurant}</p>
-                  )}
-                  <p className="text-xs text-muted-foreground">
-                    Last updated: {new Date(person.lastUpdated).toLocaleString()} by {person.updatedBy}
-                  </p>
-                </div>
+          {isLoading ? (
+            <div className="flex items-center justify-center py-10">
+              <Spinner className="h-6 w-6" />
+            </div>
+          ) : filteredParticipants.length === 0 ? (
+            <p className="py-12 text-center text-sm text-muted-foreground">
+              No participants match the current filters.
+            </p>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Name</TableHead>
+                  <TableHead>Email</TableHead>
+                  <TableHead>Pretix ID</TableHead>
+                  <TableHead>Captain</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Assigned Restaurant</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filteredParticipants.map((participant) => {
+                  const assignmentRestaurantId = assignmentByParticipant[participant.id]
+                  const assignedRestaurant = assignmentRestaurantId
+                    ? restaurantById.get(assignmentRestaurantId)
+                    : undefined
 
-                <div className="flex items-center gap-4">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => {
-                      setSelectedPerson(person)
-                      setNewComment(person.comments)
-                      setCommentDialogOpen(true)
-                    }}
-                  >
-                    <MessageSquare className="h-4 w-4" />
-                  </Button>
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm text-muted-foreground">No-Show</span>
-                    <Switch checked={person.noShow} onCheckedChange={() => handleNoShowToggle(person.id)} />
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
+                  return (
+                    <TableRow key={participant.id}>
+                      <TableCell>
+                        <div className="flex flex-col">
+                          <span className="text-sm font-medium text-foreground">{participant.attendee_name}</span>
+                          <span className="text-xs text-muted-foreground">
+                            {participant.given_name} {participant.family_name}
+                          </span>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <a href={`mailto:${participant.attendee_email}`} className="text-sm text-primary hover:underline">
+                          {participant.attendee_email}
+                        </a>
+                      </TableCell>
+                      <TableCell>
+                        <span className="text-xs text-muted-foreground">{participant.pretix_id}</span>
+                      </TableCell>
+                      <TableCell>
+                        {participant.is_table_captain ? (
+                          <Badge variant="secondary" className="bg-primary/10 text-primary">
+                            Captain
+                          </Badge>
+                        ) : (
+                          <Badge variant="outline">Attendee</Badge>
+                        )}
+                        {participant.captain_phone && (
+                          <p className="mt-1 text-xs text-muted-foreground">{participant.captain_phone}</p>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <Badge className={cn("px-2 py-1 text-xs", statusBadgeStyles[participant.status])}>
+                          {participant.status.replace("_", " ")}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        {assignedRestaurant ? (
+                          <div className="flex flex-col">
+                            <span className="text-sm text-foreground">{assignedRestaurant.name}</span>
+                            <span className="text-xs text-muted-foreground">{assignedRestaurant.address}</span>
+                          </div>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">Unassigned</span>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex items-center justify-end gap-2">
+                          <Button variant="ghost" size="icon" onClick={() => openDialog("edit", participant.id)}>
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                              <Button variant="ghost" size="icon" className="text-destructive">
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>Remove participant?</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  They will be removed from assignments and lists. Continue?
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                <AlertDialogAction
+                                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                  onClick={() => handleDelete(participant.id)}
+                                >
+                                  Delete
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  )
+                })}
+              </TableBody>
+            </Table>
+          )}
         </CardContent>
       </Card>
 
-      {/* Comment Dialog */}
-      <Dialog open={commentDialogOpen} onOpenChange={setCommentDialogOpen}>
-        <DialogContent className="sm:max-w-[500px]">
+      <Dialog open={dialogState.open} onOpenChange={(open) => (open ? setDialogState((state) => ({ ...state, open })) : closeDialog())}>
+        <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle>Add Comment</DialogTitle>
-            <DialogDescription>Add notes about {selectedPerson?.name}</DialogDescription>
+            <DialogTitle>{dialogState.mode === "create" ? "Add participant" : "Edit participant"}</DialogTitle>
+            <DialogDescription>Manage attendee details used for restaurant assignments.</DialogDescription>
           </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="comment">Comment</Label>
-              <Textarea
-                id="comment"
-                placeholder="Enter your comment..."
-                value={newComment}
-                onChange={(e) => setNewComment(e.target.value)}
-                rows={4}
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setCommentDialogOpen(false)}>
-              Cancel
-            </Button>
-            <Button onClick={handleAddComment}>Save Comment</Button>
-          </DialogFooter>
+          <Form {...form}>
+            <form className="space-y-4" onSubmit={form.handleSubmit(handleSubmit)}>
+              <div className="grid gap-4 md:grid-cols-2">
+                <FormField
+                  control={form.control}
+                  name="pretix_id"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Pretix ID</FormLabel>
+                      <FormControl>
+                        <Input placeholder="ABC123" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="status"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Status</FormLabel>
+                      <Select value={field.value} onValueChange={field.onChange}>
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="registered">Registered</SelectItem>
+                          <SelectItem value="late_joiner">Late joiner</SelectItem>
+                          <SelectItem value="cancelled">Cancelled</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="given_name"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Given name</FormLabel>
+                      <FormControl>
+                        <Input placeholder="Alice" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="family_name"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Family name</FormLabel>
+                      <FormControl>
+                        <Input placeholder="Johnson" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="attendee_name"
+                  render={({ field }) => (
+                    <FormItem className="md:col-span-2">
+                      <FormLabel>Badge name</FormLabel>
+                      <FormControl>
+                        <Input placeholder="Alice Johnson" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="attendee_email"
+                  render={({ field }) => (
+                    <FormItem className="md:col-span-2">
+                      <FormLabel>Email</FormLabel>
+                      <FormControl>
+                        <Input type="email" placeholder="alice@example.com" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="is_table_captain"
+                  render={({ field }) => (
+                    <FormItem className="flex items-center justify-between rounded-lg border border-border p-3">
+                      <div>
+                        <FormLabel>Table captain</FormLabel>
+                        <p className="text-xs text-muted-foreground">
+                          Captains can guide their table and receive export summaries.
+                        </p>
+                      </div>
+                      <FormControl>
+                        <Switch checked={field.value} onCheckedChange={field.onChange} />
+                      </FormControl>
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="captain_phone"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Captain phone</FormLabel>
+                      <FormControl>
+                        <Input
+                          placeholder="+49 123 4567"
+                          value={field.value ?? ""}
+                          onChange={(event) => field.onChange(event.target.value || undefined)}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="captain_preferred_contact"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Preferred contact</FormLabel>
+                      <Select value={field.value ?? ""} onValueChange={(value) => field.onChange(value || undefined)}>
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select channel" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="">None</SelectItem>
+                          <SelectItem value="email">Email</SelectItem>
+                          <SelectItem value="phone">Phone</SelectItem>
+                          <SelectItem value="sms">SMS</SelectItem>
+                          <SelectItem value="whatsapp">WhatsApp</SelectItem>
+                          <SelectItem value="telegram">Telegram</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={closeDialog}>
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={createParticipant.isPending || editParticipant.isPending}>
+                  {dialogState.mode === "create" ? "Add participant" : "Save changes"}
+                </Button>
+              </DialogFooter>
+            </form>
+          </Form>
         </DialogContent>
       </Dialog>
     </div>
