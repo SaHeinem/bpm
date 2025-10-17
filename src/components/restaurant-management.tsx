@@ -2,7 +2,7 @@ import { useMemo, useState } from "react"
 import { useForm, type Resolver } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { z } from "zod"
-import { Plus, Pencil, Trash2 } from "lucide-react"
+import { Plus, Pencil, Trash2, Search, X } from "lucide-react"
 
 import { useRestaurants } from "@/hooks/use-restaurants"
 import { useParticipants } from "@/hooks/use-participants"
@@ -128,6 +128,7 @@ export function RestaurantManagement() {
   const { assignments } = useAssignments()
 
   const [dialogState, setDialogState] = useState<RestaurantDialogState>({ open: false, mode: "create" })
+  const [searchQuery, setSearchQuery] = useState("")
 
   const form = useForm<RestaurantFormValues>({
     resolver: zodResolver(restaurantSchema) as unknown as Resolver<RestaurantFormValues>,
@@ -152,6 +153,23 @@ export function RestaurantManagement() {
       return acc
     }, {})
   }, [restaurants, assignments])
+
+  const filteredRestaurants = useMemo(() => {
+    const term = searchQuery.trim().toLowerCase()
+    if (!term) {
+      return restaurants
+    }
+    return restaurants.filter((restaurant) => {
+      const captain = restaurant.assigned_captain_id ? captainById.get(restaurant.assigned_captain_id) : undefined
+      return (
+        restaurant.name.toLowerCase().includes(term) ||
+        restaurant.address.toLowerCase().includes(term) ||
+        restaurant.public_transport_lines?.toLowerCase().includes(term) ||
+        captain?.attendee_name.toLowerCase().includes(term) ||
+        captain?.attendee_email.toLowerCase().includes(term)
+      )
+    })
+  }, [restaurants, searchQuery, captainById])
 
   const totalCapacity = useMemo(() => restaurants.reduce((total, restaurant) => total + restaurant.max_seats, 0), [restaurants])
   const totalAssigned = useMemo(
@@ -294,10 +312,29 @@ export function RestaurantManagement() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Restaurants</CardTitle>
+          <CardTitle>Restaurants ({filteredRestaurants.length})</CardTitle>
           <CardDescription>Manage seating capacity, transport info, and captains.</CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-4">
+          <div className="relative">
+            <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Search by name, address, captain, or transit lines…"
+              value={searchQuery}
+              onChange={(event) => setSearchQuery(event.target.value)}
+              className="pl-9 pr-9"
+            />
+            {searchQuery && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="absolute right-1 top-1 h-8 w-8"
+                onClick={() => setSearchQuery("")}
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            )}
+          </div>
           {restaurantsLoading ? (
             <div className="flex items-center justify-center py-10">
               <Spinner className="h-6 w-6" />
@@ -315,7 +352,7 @@ export function RestaurantManagement() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {restaurants.map((restaurant) => {
+                {filteredRestaurants.map((restaurant) => {
                   const occupancy = occupancyByRestaurant[restaurant.id] ?? 0
                   const ratio = restaurant.max_seats ? occupancy / restaurant.max_seats : 0
                   const captain = restaurant.assigned_captain_id
@@ -326,9 +363,6 @@ export function RestaurantManagement() {
                     <TableRow key={restaurant.id}>
                       <TableCell>
                         <div className="font-medium text-foreground">{restaurant.name}</div>
-                        {restaurant.public_transport_lines && (
-                          <p className="text-xs text-muted-foreground">Lines: {restaurant.public_transport_lines}</p>
-                        )}
                       </TableCell>
                       <TableCell>
                         <p className="text-sm text-muted-foreground">{restaurant.address}</p>
@@ -352,6 +386,9 @@ export function RestaurantManagement() {
                         <div className="flex flex-col gap-1 text-xs text-muted-foreground">
                           <span>Taxi: {formatMinutes(restaurant.taxi_time)}</span>
                           <span>Transit: {formatMinutes(restaurant.public_transport_time)}</span>
+                          {restaurant.public_transport_lines && (
+                            <span>Lines: {restaurant.public_transport_lines}</span>
+                          )}
                         </div>
                       </TableCell>
                       <TableCell className="text-right">
@@ -450,8 +487,8 @@ export function RestaurantManagement() {
                     <FormItem>
                       <FormLabel>Table captain</FormLabel>
                       <Select
-                        value={field.value ?? ""}
-                        onValueChange={(value) => field.onChange(value === "" ? null : value)}
+                        value={field.value ?? "unassigned"}
+                        onValueChange={(value) => field.onChange(value === "unassigned" ? null : value)}
                       >
                         <FormControl>
                           <SelectTrigger>
@@ -459,7 +496,7 @@ export function RestaurantManagement() {
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          <SelectItem value="">Unassigned</SelectItem>
+                          <SelectItem value="unassigned">Unassigned</SelectItem>
                           {captainOptions.map((captain) => (
                             <SelectItem key={captain.id} value={captain.id}>
                               {captain.attendee_name}

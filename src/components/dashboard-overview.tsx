@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react"
 import { useQueryClient } from "@tanstack/react-query"
-import { Shuffle, Users, ClipboardList, AlertTriangle, FileDown, Lock } from "lucide-react"
+import { Shuffle, Users, ClipboardList, AlertTriangle, FileDown, Lock, UserPlus } from "lucide-react"
 
 import { useParticipants } from "@/hooks/use-participants"
 import { useRestaurants } from "@/hooks/use-restaurants"
@@ -43,8 +43,10 @@ export function DashboardOverview() {
   const { eventStatus, setEventStatusMutation } = useEventStatus()
 
   const [showReassignDialog, setShowReassignDialog] = useState(false)
+  const [showClearDialog, setShowClearDialog] = useState(false)
   const [isAssigningCaptains, setIsAssigningCaptains] = useState(false)
   const [isAssigningParticipants, setIsAssigningParticipants] = useState(false)
+  const [isAssigningUnassigned, setIsAssigningUnassigned] = useState(false)
   const [isClearingAssignments, setIsClearingAssignments] = useState(false)
   const [isFinalizing, setIsFinalizing] = useState(false)
 
@@ -60,6 +62,14 @@ export function DashboardOverview() {
     () => assignableParticipants.filter((participant) => !participant.is_table_captain),
     [assignableParticipants],
   )
+
+  const unassignedCount = useMemo(() => {
+    const assignedParticipantIds = new Set(assignments.map(a => a.participant_id))
+    const captainIds = new Set(restaurants.map(r => r.assigned_captain_id).filter(Boolean))
+    return assignableParticipants.filter(
+      p => !assignedParticipantIds.has(p.id) && !captainIds.has(p.id)
+    ).length
+  }, [assignableParticipants, assignments, restaurants])
 
   const activeCaptains = useMemo(
     () => participants.filter((participant) => participant.is_table_captain && participant.status !== "cancelled"),
@@ -132,16 +142,14 @@ export function DashboardOverview() {
       setIsAssigningCaptains(true)
       const plan = planCaptainAssignments(restaurants, activeCaptains)
 
-      const { error } = await supabase
-        .from("restaurants")
-        .upsert(
-          plan.map(({ restaurantId, captainId }) => ({
-            id: restaurantId,
-            assigned_captain_id: captainId,
-          })),
-          { onConflict: "id" },
-        )
-      if (error) throw error
+      // Update each restaurant's captain assignment individually
+      for (const { restaurantId, captainId } of plan) {
+        const { error } = await supabase
+          .from("restaurants")
+          .update({ assigned_captain_id: captainId })
+          .eq("id", restaurantId)
+        if (error) throw error
+      }
 
       await setEventStatusMutation.mutateAsync("captains_assigned")
       await activityLogger.mutateAsync({
@@ -192,8 +200,14 @@ export function DashboardOverview() {
       setIsAssigningParticipants(true)
       const { assignments: plannedAssignments, unassigned } = planParticipantAssignments(restaurants, assignableParticipants)
 
-      const { error: clearError } = await supabase.from("assignments").delete().neq("participant_id", "")
-      if (clearError) throw clearError
+      // Clear all existing assignments
+      if (assignments.length > 0) {
+        const { error: clearError } = await supabase
+          .from("assignments")
+          .delete()
+          .in("id", assignments.map(a => a.id))
+        if (clearError) throw clearError
+      }
 
       if (plannedAssignments.length) {
         const payload = plannedAssignments.map(({ participantId, restaurantId }) => ({
@@ -254,11 +268,96 @@ export function DashboardOverview() {
       })
       return
     }
-    setShowReassignDialog(true)
+    // Only show warning dialog if there are existing assignments
+    if (assignments.length > 0) {
+      setShowReassignDialog(true)
+    } else {
+      void executeParticipantAssignment()
+    }
   }
 
-  const handleClearAssignments = async () => {
-    if (isClearingAssignments) return
+  const handleAssignUnassigned = async () => {
+    if (isAssigningUnassigned) return
+    if (isFinalized) {
+      toast({
+        title: "Event finalized",
+        description: "Assignments are locked. Unfinalize the event to reshuffle.",
+      })
+      return
+    }
+    if (!restaurantsWithCaptain.length) {
+      toast({
+        title: "Assign captains first",
+        description: "Participants can only be placed once all restaurants have captains.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    try {
+      setIsAssigningUnassigned(true)
+
+      // Get IDs of already assigned participants
+      const assignedParticipantIds = new Set(assignments.map(a => a.participant_id))
+
+      // Filter to only unassigned, assignable participants
+      const unassignedParticipants = assignableParticipants.filter(
+        p => !assignedParticipantIds.has(p.id) && !p.is_table_captain
+      )
+
+      if (unassignedParticipants.length === 0) {
+        toast({
+          title: "No unassigned participants",
+          description: "All eligible participants are already assigned.",
+        })
+        return
+      }
+
+      const { assignments: plannedAssignments, unassigned } = planParticipantAssignments(restaurants, unassignedParticipants)
+
+      if (plannedAssignments.length) {
+        const payload = plannedAssignments.map(({ participantId, restaurantId }) => ({
+          participant_id: participantId,
+          restaurant_id: restaurantId,
+          assigned_at: new Date().toISOString(),
+        }))
+        const { error: insertError } = await supabase.from("assignments").insert(payload)
+        if (insertError) throw insertError
+      }
+
+      await setEventStatusMutation.mutateAsync("participants_assigned")
+      await activityLogger.mutateAsync({
+        event_type: "assignment",
+        description: `Assigned ${plannedAssignments.length} unassigned participants`,
+        actor: null,
+        metadata: {
+          unassignedCount: unassigned.length,
+        },
+      })
+
+      await queryClient.invalidateQueries({ queryKey: queryKeys.assignments.all })
+      toast({
+        title: "Unassigned participants placed",
+        description:
+          plannedAssignments.length === 0
+            ? "No participants could be assigned."
+            : unassigned.length
+              ? `${plannedAssignments.length} assigned. ${unassigned.length} could not be placed due to capacity.`
+              : `All ${plannedAssignments.length} unassigned participants have been placed.`,
+      })
+    } catch (error) {
+      console.error(error)
+      toast({
+        title: "Assignment failed",
+        description: error instanceof Error ? error.message : "Please try again.",
+        variant: "destructive",
+      })
+    } finally {
+      setIsAssigningUnassigned(false)
+    }
+  }
+
+  const handleClearAssignments = () => {
     if (!assignments.length) {
       toast({
         title: "Nothing to clear",
@@ -273,10 +372,19 @@ export function DashboardOverview() {
       })
       return
     }
+    setShowClearDialog(true)
+  }
+
+  const executeClearAssignments = async () => {
+    if (isClearingAssignments) return
 
     try {
       setIsClearingAssignments(true)
-      const { error } = await supabase.from("assignments").delete().neq("participant_id", "")
+      // Clear all assignments
+      const { error } = await supabase
+        .from("assignments")
+        .delete()
+        .in("id", assignments.map(a => a.id))
       if (error) throw error
 
       const nextState = restaurantsWithCaptain.length ? "captains_assigned" : "setup"
@@ -304,6 +412,7 @@ export function DashboardOverview() {
       })
     } finally {
       setIsClearingAssignments(false)
+      setShowClearDialog(false)
     }
   }
 
@@ -348,7 +457,7 @@ export function DashboardOverview() {
 
     await activityLogger.mutateAsync({
       event_type: "assignment",
-      description: "Exported assignment rosters",
+      description: "Exported assignments",
       actor: null,
       metadata: {
         restaurantCount: rosters.length,
@@ -357,7 +466,7 @@ export function DashboardOverview() {
 
     toast({
       title: "Export ready",
-      description: "CSV downloaded and print preview opened for PDF export.",
+      description: "CSV downloaded and print preview opened.",
     })
   }
 
@@ -427,7 +536,7 @@ export function DashboardOverview() {
           <CardContent>
             <div className="flex items-baseline gap-2">
               <span className="text-3xl font-semibold">{participants.length}</span>
-              <Badge variant="outline">{assignableParticipants.length} assignable</Badge>
+              <Badge variant="outline">{unassignedCount} unassigned</Badge>
             </div>
           </CardContent>
         </Card>
@@ -536,6 +645,22 @@ export function DashboardOverview() {
             <Button
               variant="outline"
               className="w-full justify-start gap-2 bg-transparent"
+              onClick={handleAssignUnassigned}
+              disabled={isAssigningUnassigned || isFinalized || captainShortfall}
+              title={
+                captainShortfall
+                  ? "Assign captains before placing participants."
+                  : isFinalized
+                    ? "Assignments are locked."
+                    : undefined
+              }
+            >
+              {isAssigningUnassigned ? <Spinner className="h-4 w-4" /> : <UserPlus className="h-4 w-4" />}
+              Assign unassigned to open tables
+            </Button>
+            <Button
+              variant="outline"
+              className="w-full justify-start gap-2 bg-transparent"
               onClick={handleClearAssignments}
               disabled={isClearingAssignments || !assignments.length || isFinalized}
             >
@@ -549,7 +674,7 @@ export function DashboardOverview() {
               disabled={!assignments.length}
             >
               <FileDown className="h-4 w-4" />
-              Export rosters
+              Export assignments
             </Button>
             <Button
               variant="outline"
@@ -595,6 +720,14 @@ export function DashboardOverview() {
       </div>
 
       <ShuffleWarningDialog open={showReassignDialog} onOpenChange={setShowReassignDialog} onConfirm={executeParticipantAssignment} />
+      <ShuffleWarningDialog
+        open={showClearDialog}
+        onOpenChange={setShowClearDialog}
+        onConfirm={executeClearAssignments}
+        title="Clear all assignments?"
+        description="This will unassign all participants from their restaurants. They will need to be reassigned. Table captains will remain assigned to their restaurants. This action cannot be undone."
+        confirmText="Clear assignments"
+      />
     </div>
   )
 }
