@@ -1,8 +1,9 @@
-import { useMemo, useState } from "react"
+import { useMemo, useRef, useState } from "react"
 import { useForm, type Resolver } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
+import Papa from "papaparse"
 import { z } from "zod"
-import { Plus, Pencil, Trash2, Search, X } from "lucide-react"
+import { Plus, Pencil, Trash2, Search, X, UploadCloud } from "lucide-react"
 
 import { useRestaurants } from "@/hooks/use-restaurants"
 import { useParticipants } from "@/hooks/use-participants"
@@ -93,6 +94,15 @@ interface RestaurantDialogState {
   restaurantId?: string
 }
 
+type RestaurantCsvRow = {
+  name?: string
+  address?: string
+  max_seats?: string | number
+  taxi_time?: string | number
+  public_transport_time?: string | number
+  public_transport_lines?: string
+}
+
 const initialFormValues: RestaurantFormValues = {
   name: "",
   address: "",
@@ -122,13 +132,14 @@ const formatMinutes = (value: number | null) => {
 
 export function RestaurantManagement() {
   const { toast } = useToast()
-  const { restaurants, isLoading: restaurantsLoading, createRestaurant, editRestaurant, removeRestaurant } =
+  const { restaurants, isLoading: restaurantsLoading, createRestaurant, editRestaurant, removeRestaurant, bulkImportRestaurants } =
     useRestaurants()
   const { participants } = useParticipants()
   const { assignments } = useAssignments()
 
   const [dialogState, setDialogState] = useState<RestaurantDialogState>({ open: false, mode: "create" })
   const [searchQuery, setSearchQuery] = useState("")
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
 
   const form = useForm<RestaurantFormValues>({
     resolver: zodResolver(restaurantSchema) as unknown as Resolver<RestaurantFormValues>,
@@ -265,17 +276,88 @@ export function RestaurantManagement() {
     }
   }
 
+  const handleImportClick = () => {
+    fileInputRef.current?.click()
+  }
+
+  const handleFileChange: React.ChangeEventHandler<HTMLInputElement> = async (event) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+
+    try {
+      const parsed = await new Promise<Papa.ParseResult<RestaurantCsvRow>>((resolve, reject) => {
+        Papa.parse<RestaurantCsvRow>(file, {
+          header: true,
+          skipEmptyLines: true,
+          transformHeader: (header: string) => header.trim().toLowerCase(),
+          complete: resolve,
+          error: reject,
+        })
+      })
+
+      if (parsed.errors.length > 0) {
+        throw new Error(parsed.errors[0].message)
+      }
+
+      const payload = parsed.data
+        .filter((row) => Boolean(row.name) && Boolean(row.address) && Boolean(row.max_seats))
+        .map((row) => ({
+          name: String(row.name),
+          address: String(row.address),
+          max_seats: typeof row.max_seats === "number" ? row.max_seats : parseInt(String(row.max_seats)),
+          taxi_time: row.taxi_time ? (typeof row.taxi_time === "number" ? row.taxi_time : parseInt(String(row.taxi_time))) : null,
+          public_transport_time: row.public_transport_time
+            ? typeof row.public_transport_time === "number"
+              ? row.public_transport_time
+              : parseInt(String(row.public_transport_time))
+            : null,
+          public_transport_lines: row.public_transport_lines ? String(row.public_transport_lines) : null,
+        }))
+
+      if (!payload.length) {
+        toast({
+          title: "No rows imported",
+          description: "We could not find any valid rows in that CSV.",
+        })
+        return
+      }
+
+      await bulkImportRestaurants.mutateAsync(payload)
+      toast({
+        title: "Restaurants imported",
+        description: `${payload.length} restaurants processed successfully.`,
+      })
+    } catch (error) {
+      console.error(error)
+      toast({
+        title: "Import failed",
+        description:
+          error instanceof Error ? error.message : "We could not parse that CSV. Please ensure it includes name, address, and max_seats columns.",
+        variant: "destructive",
+      })
+    } finally {
+      event.target.value = ""
+    }
+  }
+
   return (
     <div className="space-y-6 p-6">
-      <div className="flex items-center justify-between gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="text-3xl font-bold tracking-tight text-foreground">Restaurant Management</h2>
           <p className="text-muted-foreground">Track capacity and assign table captains.</p>
         </div>
-        <Button onClick={() => handleDialogOpen("create")} className="gap-2">
-          <Plus className="h-4 w-4" />
-          Add Restaurant
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" className="gap-2 bg-transparent" onClick={handleImportClick}>
+            <UploadCloud className="h-4 w-4" />
+            Import CSV
+          </Button>
+          <Button onClick={() => handleDialogOpen("create")} className="gap-2">
+            <Plus className="h-4 w-4" />
+            Add Restaurant
+          </Button>
+          <input ref={fileInputRef} type="file" accept=".csv,text/csv" className="hidden" onChange={handleFileChange} />
+        </div>
       </div>
 
       <div className="grid gap-4 md:grid-cols-3">

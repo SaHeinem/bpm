@@ -78,3 +78,20 @@ for each row execute function set_updated_at();
 create trigger trg_restaurants_updated_at
 before update on restaurants
 for each row execute function set_updated_at();
+
+create table email_logs (
+  id uuid primary key default uuid_generate_v4(),
+  participant_id uuid not null references participants (id) on delete cascade,
+  restaurant_id uuid references restaurants (id) on delete set null,
+  email_type text not null check (email_type in ('initial_assignment', 'final_assignment', 'individual_update')),
+  recipient_email text not null,
+  subject text not null,
+  body_text text not null,
+  sent_at timestamptz not null default now(),
+  sent_by text,
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+
+create index email_logs_participant_idx on email_logs (participant_id);
+create index email_logs_sent_at_idx on email_logs (sent_at desc);

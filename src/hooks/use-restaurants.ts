@@ -44,6 +44,18 @@ async function deleteRestaurant(id: string): Promise<void> {
   }
 }
 
+async function bulkInsertRestaurants(payload: RestaurantPayload[]): Promise<void> {
+  if (!payload.length) {
+    return
+  }
+
+  const { error } = await supabase.from("restaurants").insert(payload)
+
+  if (error) {
+    throw error
+  }
+}
+
 export function useRestaurants() {
   const queryClient = useQueryClient()
 
@@ -73,6 +85,13 @@ export function useRestaurants() {
     },
   })
 
+  const bulkImportRestaurants = useMutation({
+    mutationFn: bulkInsertRestaurants,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.restaurants.all })
+    },
+  })
+
   return {
     restaurants: restaurantsQuery.data ?? [],
     isLoading: restaurantsQuery.isLoading,
@@ -80,5 +99,6 @@ export function useRestaurants() {
     createRestaurant,
     editRestaurant,
     removeRestaurant,
+    bulkImportRestaurants,
   }
 }

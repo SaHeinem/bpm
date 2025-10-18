@@ -60,3 +60,19 @@ export interface ActivityLogEntry {
   created_at: string
   metadata: Record<string, unknown> | null
 }
+
+export type EmailType = "initial_assignment" | "final_assignment" | "individual_update"
+
+export interface EmailLog {
+  id: string
+  participant_id: string
+  restaurant_id: string | null
+  email_type: EmailType
+  recipient_email: string
+  subject: string
+  body_text: string
+  sent_at: string
+  sent_by: string | null
+  metadata: Record<string, unknown>
+  created_at: string
+}

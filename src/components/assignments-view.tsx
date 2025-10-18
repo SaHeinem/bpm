@@ -7,6 +7,7 @@ import {
   AlertTriangle,
   Download,
   X,
+  Mail,
 } from "lucide-react";
 
 import { useAssignments } from "@/hooks/use-assignments";
@@ -15,6 +16,7 @@ import { useRestaurants } from "@/hooks/use-restaurants";
 import { useToast } from "@/hooks/use-toast";
 import { useEventStatus } from "@/hooks/use-event-status";
 import { useActivityLogger } from "@/hooks/use-activity-log";
+import { useEmails } from "@/hooks/use-emails";
 import {
   buildRestaurantRosters,
   generateAssignmentCsv,
@@ -61,6 +63,7 @@ export function AssignmentsView() {
   const { toast } = useToast();
   const { eventStatus, setEventStatusMutation } = useEventStatus();
   const activityLogger = useActivityLogger();
+  const { sendBulkEmailsMutation, sendEmailMutation } = useEmails();
 
   const [searchQuery, setSearchQuery] = useState("");
   const [activeTab, setActiveTab] = useState<"people" | "restaurants">(
@@ -328,6 +331,117 @@ export function AssignmentsView() {
     });
   };
 
+  const handleSendAllEmails = async (emailType: "initial_assignment" | "final_assignment") => {
+    if (!assignments.length) {
+      toast({
+        title: "No assignments yet",
+        description: "Assign participants before sending emails.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const rosters = buildRestaurantRosters(
+      restaurants,
+      participants,
+      assignments.map((assignment) => ({
+        participantId: assignment.participant_id,
+        restaurantId: assignment.restaurant_id,
+      }))
+    );
+
+    const emails = rosters.flatMap((roster) => {
+      const tableGuests = roster.participants;
+      const allParticipants = [...tableGuests, roster.captain].filter(
+        (p): p is typeof participants[0] => Boolean(p)
+      );
+
+      return allParticipants.map((participant) => ({
+        participant,
+        restaurant: roster.restaurant,
+        captain: roster.captain,
+        tableGuests: tableGuests.filter((p) => p.id !== participant.id),
+        emailType,
+      }));
+    });
+
+    try {
+      await sendBulkEmailsMutation.mutateAsync({ emails, emailType });
+      await activityLogger.mutateAsync({
+        event_type: "email",
+        description: `Sent ${emailType.replace("_", " ")} emails to all participants`,
+        actor: null,
+        metadata: { emailCount: emails.length, emailType },
+      });
+      toast({
+        title: "Emails sent",
+        description: `Successfully sent ${emails.length} assignment emails.`,
+      });
+    } catch (error) {
+      console.error(error);
+      toast({
+        title: "Failed to send emails",
+        description: error instanceof Error ? error.message : "Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleSendIndividualEmail = async (participantId: string) => {
+    const participant = participantById.get(participantId);
+    if (!participant) return;
+
+    const assignmentRestaurantId = assignmentsByParticipant[participantId];
+    if (!assignmentRestaurantId) {
+      toast({
+        title: "No assignment",
+        description: "This participant is not assigned to a restaurant yet.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const restaurant = restaurants.find((r) => r.id === assignmentRestaurantId);
+    if (!restaurant) return;
+
+    const captain = restaurant.assigned_captain_id
+      ? participantById.get(restaurant.assigned_captain_id) ?? null
+      : null;
+
+    const tableGuestIds = assignmentsByRestaurant[assignmentRestaurantId] ?? [];
+    const tableGuests = tableGuestIds
+      .map((id) => participantById.get(id))
+      .filter((p): p is typeof participants[0] => Boolean(p))
+      .filter((p) => p.id !== participantId);
+
+    try {
+      await sendEmailMutation.mutateAsync({
+        participant,
+        restaurant,
+        captain,
+        tableGuests,
+        emailType: "individual_update",
+      });
+      await activityLogger.mutateAsync({
+        event_type: "email",
+        description: `Sent individual assignment email to ${participant.attendee_name}`,
+        actor: null,
+        metadata: { participantId, restaurantId: restaurant.id },
+      });
+      toast({
+        title: "Email sent",
+        description: `Assignment email sent to ${participant.attendee_name}.`,
+      });
+    } catch (error) {
+      console.error(error);
+      toast({
+        title: "Failed to send email",
+        description: error instanceof Error ? error.message : "Please try again.",
+        variant: "destructive",
+      });
+    }
+  };
+
   const dataLoading =
     participantsLoading || restaurantsLoading || assignmentsLoading;
 
@@ -363,7 +477,7 @@ export function AssignmentsView() {
               </Button>
             )}
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Button
               variant="outline"
               className="gap-2 bg-transparent"
@@ -372,6 +486,24 @@ export function AssignmentsView() {
             >
               <Download className="h-4 w-4" />
               Export
+            </Button>
+            <Button
+              variant="outline"
+              className="gap-2 bg-transparent"
+              onClick={() => handleSendAllEmails("initial_assignment")}
+              disabled={!assignments.length || sendBulkEmailsMutation.isPending}
+            >
+              <Mail className="h-4 w-4" />
+              Send Initial Emails
+            </Button>
+            <Button
+              variant="outline"
+              className="gap-2 bg-transparent"
+              onClick={() => handleSendAllEmails("final_assignment")}
+              disabled={!assignments.length || sendBulkEmailsMutation.isPending}
+            >
+              <Mail className="h-4 w-4" />
+              Send Final Emails
             </Button>
           </div>
         </CardContent>
@@ -465,33 +597,46 @@ export function AssignmentsView() {
                               {restaurant ? restaurant.name : "Unassigned"}
                             </p>
                           </div>
-                          <Select
-                            value={assignmentRestaurantId || "unassigned"}
-                            onValueChange={(value) =>
-                              handleManualAssign(
-                                participant.id,
-                                value === "unassigned" ? null : value
-                              )
-                            }
-                            disabled={isBusy || isCaptain || isFinalized}
-                          >
-                            <SelectTrigger className="w-[220px]">
-                              <SelectValue placeholder="Assign restaurant" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="unassigned">
-                                Unassigned
-                              </SelectItem>
-                              {restaurants.map((restaurantOption) => (
-                                <SelectItem
-                                  key={restaurantOption.id}
-                                  value={restaurantOption.id}
-                                >
-                                  {restaurantOption.name}
+                          <div className="flex gap-2">
+                            {assignmentRestaurantId && (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => handleSendIndividualEmail(participant.id)}
+                                disabled={sendEmailMutation.isPending}
+                                title="Send assignment email"
+                              >
+                                <Mail className="h-4 w-4" />
+                              </Button>
+                            )}
+                            <Select
+                              value={assignmentRestaurantId || "unassigned"}
+                              onValueChange={(value) =>
+                                handleManualAssign(
+                                  participant.id,
+                                  value === "unassigned" ? null : value
+                                )
+                              }
+                              disabled={isBusy || isCaptain || isFinalized}
+                            >
+                              <SelectTrigger className="w-[220px]">
+                                <SelectValue placeholder="Assign restaurant" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="unassigned">
+                                  Unassigned
                                 </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
+                                {restaurants.map((restaurantOption) => (
+                                  <SelectItem
+                                    key={restaurantOption.id}
+                                    value={restaurantOption.id}
+                                  >
+                                    {restaurantOption.name}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
                         </div>
                       </div>
                     );

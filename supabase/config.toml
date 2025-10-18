@@ -31,7 +31,8 @@ file_size_limit = 52428800
 enabled = false
 
 [edge_runtime]
-enabled = false
+enabled = true
 
 [functions]
-[functions.unstable_features]
+[functions.send-email]
+verify_jwt = false

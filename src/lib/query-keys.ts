@@ -14,4 +14,5 @@ export const queryKeys = {
   activityLog: {
     all: ["activity-log"] as const,
   },
+  emailLogs: ["email-logs"] as const,
 }
