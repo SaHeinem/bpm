@@ -1,0 +1,44 @@
+project_id = "local"
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public", "storage", "graphql_public"]
+extra_search_path = ["extensions"]
+max_rows = 1000
+
+[db]
+port = 54322
+shadow_port = 6544
+database = "postgres"
+user = "postgres"
+password = "postgres"
+pooler_port = 6543
+pooler_idle_timeout = 10
+ssl = false
+
+[studio]
+enabled = true
+port = 54323
+
+[inbucket]
+enabled = false
+port = 54324
+
+[auth]
+site_url = "http://localhost:54321"
+additional_redirect_urls = ["http://localhost:5173"]
+external_email_enabled = true
+
+[storage]
+enabled = true
+file_size_limit = 52428800
+
+[realtime]
+port = 54325
+
+[edge_runtime]
+enabled = false
+
+[analytics]
+enabled = false

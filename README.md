@@ -15,8 +15,8 @@ React + TypeScript dashboard for running blind peering dinners. Manage restauran
 
 - Node.js 20+
 - [pnpm](https://pnpm.io/) 8+
-- Supabase project with Row Level Security disabled for the tables below
-- Optional: [Supabase CLI](https://supabase.com/docs/guides/cli) for local database workflows
+- [Supabase CLI](https://supabase.com/docs/guides/cli) (for local development)
+- Supabase project (cloud or local) with Row Level Security disabled for the tables below
 
 ## Quick Start
 
@@ -35,15 +35,22 @@ React + TypeScript dashboard for running blind peering dinners. Manage restauran
    # edit .env with VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY
    ```
 
-3. **Create database schema**
-
-   Use the provided migration with Supabase CLI or run the SQL against your project:
+3. **Bring up Supabase locally** (or point at an existing project)
 
    ```bash
-   supabase db push --file supabase/migrations/001_create_blind_peering.sql
-   # or
-   psql "$SUPABASE_CONNECTION_STRING" -f supabase/migrations/001_create_blind_peering.sql
+   # install the CLI once: https://supabase.com/docs/guides/cli
+   cd supabase
+   supabase start
+   supabase db reset
    ```
+
+   The CLI prints the local API URL and anon key to `supabase/.env`. Copy those values into `.env` as `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`. When you are done developing, run `supabase stop` to tear the stack down.
+
+   > **Using Supabase Cloud instead?** Skip the commands above and run the SQL migration against your hosted project:
+   >
+   > ```bash
+   > psql "$SUPABASE_CONNECTION_STRING" -f supabase/migrations/001_create_blind_peering.sql
+   > ```
 
 4. **Run the app**
 
@@ -52,6 +59,34 @@ React + TypeScript dashboard for running blind peering dinners. Manage restauran
    ```
 
    The dashboard is available at `http://localhost:5173`.
+
+### Local email testing (Mailpit)
+
+After `supabase start` you can capture outgoing Supabase Auth emails with [Mailpit](https://github.com/axllent/mailpit):
+
+1. Run Mailpit on the same Docker network as the Supabase stack:
+
+   ```bash
+   docker run -d --name supabase-mailpit \
+     --network supabase_default \
+     -p 1025:1025 -p 8025:8025 \
+     axllent/mailpit:latest
+   ```
+
+2. Edit `supabase/.env` (created by the CLI) and set:
+
+   ```
+   SMTP_HOST=supabase-mailpit
+   SMTP_PORT=1025
+   SMTP_USER=
+   SMTP_PASS=
+   SMTP_ADMIN_EMAIL=admin@example.com
+   SMTP_SENDER_NAME=Blind Peering Events
+   ```
+
+   Save the file and restart the stack (`supabase stop && supabase start`) so GoTrue picks up the new SMTP settings.
+
+3. Open the Mailpit UI at [http://localhost:8025](http://localhost:8025) to inspect the captured messages. When you are finished testing, stop Mailpit with `docker stop supabase-mailpit`.
 
 ## Scripts
 

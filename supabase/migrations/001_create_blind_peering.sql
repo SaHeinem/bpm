@@ -61,12 +61,15 @@ create table event_activity (
 );
 
 create or replace function set_updated_at()
-returns trigger as $$
+returns trigger
+language plpgsql
+set search_path = ''
+as $$
 begin
-  new.updated_at = now();
+  new.updated_at = pg_catalog.now();
   return new;
 end;
-$$ language plpgsql;
+$$;
 
 create trigger trg_participants_updated_at
 before update on participants
