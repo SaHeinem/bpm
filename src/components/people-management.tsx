@@ -132,8 +132,8 @@ export function PeopleManagement() {
     removeParticipant,
     bulkImportParticipants,
   } = useParticipants();
-  const { restaurants } = useRestaurants();
-  const { assignments } = useAssignments();
+  const { restaurants, editRestaurant } = useRestaurants();
+  const { assignments, unassignMutation } = useAssignments();
   const { toast } = useToast();
 
   const [dialogState, setDialogState] = useState<ParticipantDialogState>({
@@ -321,12 +321,36 @@ export function PeopleManagement() {
     const newStatus = participant.status === "cancelled" ? "registered" : "cancelled";
 
     try {
+      // Update participant status
       await editParticipant.mutateAsync({
         id: participantId,
         payload: {
           status: newStatus,
         },
       });
+
+      // If cancelling, remove their assignment and captain assignment
+      if (newStatus === "cancelled") {
+        // Remove from assignments table (if they are a regular attendee)
+        const assignment = assignmentByParticipant[participantId];
+        if (assignment) {
+          await unassignMutation.mutateAsync(participantId);
+        }
+
+        // Remove from restaurants table (if they are a captain)
+        const captainRestaurant = restaurants.find(
+          (r) => r.assigned_captain_id === participantId
+        );
+        if (captainRestaurant) {
+          await editRestaurant.mutateAsync({
+            id: captainRestaurant.id,
+            payload: {
+              assigned_captain_id: null,
+            },
+          });
+        }
+      }
+
       toast({
         title: newStatus === "cancelled" ? "Participant cancelled" : "Participant reactivated",
         description: `${participant.attendee_name} has been ${newStatus === "cancelled" ? "cancelled" : "reactivated"}.`,
