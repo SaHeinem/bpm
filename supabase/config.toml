@@ -10,12 +10,6 @@ max_rows = 1000
 [db]
 port = 54322
 shadow_port = 6544
-database = "postgres"
-user = "postgres"
-password = "postgres"
-pooler_port = 6543
-pooler_idle_timeout = 10
-ssl = false
 
 [studio]
 enabled = true
@@ -28,17 +22,16 @@ port = 54324
 [auth]
 site_url = "http://localhost:54321"
 additional_redirect_urls = ["http://localhost:5173"]
-external_email_enabled = true
 
 [storage]
 enabled = true
 file_size_limit = 52428800
 
-[realtime]
-port = 54325
+[analytics]
+enabled = false
 
 [edge_runtime]
 enabled = false
 
-[analytics]
-enabled = false
+[functions]
+[functions.unstable_features]
