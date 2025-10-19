@@ -31,7 +31,6 @@ const navigation: NavigationItem[] = [
     name: "Email Log",
     href: "/emails",
     icon: Mail,
-    iconClass: "text-emerald-500",
   },
   { name: "Activity Log", href: "/activity", icon: Clock },
 ];

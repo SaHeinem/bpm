@@ -71,7 +71,10 @@ export function buildEmailTemplateData(
     : ""
 
   const tableGuestsFormatted = tableGuestsParam.length
-    ? tableGuestsParam.map((guest) => `- ${guest.attendee_name} (${guest.attendee_email})`).join("\n")
+    ? tableGuestsParam
+        .map((guest) => guest.given_name || guest.attendee_name.split(" ")[0] || guest.attendee_name)
+        .map((name) => `- ${name}`)
+        .join("\n")
     : "- No other guests assigned yet"
 
   return {
