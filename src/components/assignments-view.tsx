@@ -46,10 +46,18 @@ import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Spinner } from "@/components/ui/spinner";
 
-const occupancyBadge = (ratio: number) => {
-  if (ratio >= 1) return "bg-destructive text-destructive-foreground";
-  if (ratio >= 0.8) return "bg-warning text-warning-foreground";
-  return "bg-success text-success-foreground";
+const ASSIGNMENTS_OCCUPANCY_EPSILON = 0.001;
+
+const occupancyBadge = (occupancy: number, capacity: number) => {
+  const delta = capacity ? occupancy - capacity : occupancy;
+
+  if (delta > ASSIGNMENTS_OCCUPANCY_EPSILON) {
+    return "bg-destructive text-destructive-foreground";
+  }
+  if (Math.abs(delta) <= ASSIGNMENTS_OCCUPANCY_EPSILON) {
+    return "bg-amber-400/20 text-amber-600";
+  }
+  return "bg-secondary text-secondary-foreground";
 };
 
 export function AssignmentsView() {
@@ -632,9 +640,6 @@ export function AssignmentsView() {
                 ? participantById.get(restaurant.assigned_captain_id)
                 : undefined;
               const occupancy = assignedParticipants.length + (captain ? 1 : 0);
-              const ratio = restaurant.max_seats
-                ? occupancy / restaurant.max_seats
-                : 0;
 
               return (
                 <Card key={restaurant.id}>
@@ -644,7 +649,7 @@ export function AssignmentsView() {
                         <CardTitle>{restaurant.name}</CardTitle>
                         <CardDescription>{restaurant.address}</CardDescription>
                       </div>
-                      <Badge className={occupancyBadge(ratio)}>
+                      <Badge className={occupancyBadge(occupancy, restaurant.max_seats)}>
                         {occupancy}/{restaurant.max_seats}
                       </Badge>
                     </div>
