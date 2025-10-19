@@ -3,11 +3,12 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import Papa from "papaparse";
 import { z } from "zod";
-import { Pencil, Plus, Trash2, UploadCloud, X, UserX, UserCheck } from "lucide-react";
+import { Mail, MailCheck, Pencil, Plus, Trash2, UploadCloud, X, UserX, UserCheck } from "lucide-react";
 
 import { useParticipants } from "@/hooks/use-participants";
 import { useRestaurants } from "@/hooks/use-restaurants";
 import { useAssignments } from "@/hooks/use-assignments";
+import { useEmails } from "@/hooks/use-emails";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 
@@ -134,6 +135,7 @@ export function PeopleManagement() {
   } = useParticipants();
   const { restaurants, editRestaurant } = useRestaurants();
   const { assignments, unassignMutation } = useAssignments();
+  const { emailLogs } = useEmails();
   const { toast } = useToast();
 
   const [dialogState, setDialogState] = useState<ParticipantDialogState>({
@@ -168,6 +170,22 @@ export function PeopleManagement() {
     });
     return result;
   }, [assignments, restaurants]);
+
+  const firstEmailByParticipant = useMemo(() => {
+    const map = new Map<string, { sentAt: string; emailType: string }>();
+    emailLogs.forEach((log) => {
+      const sentAt = log.sent_at ?? log.created_at;
+      if (!sentAt) return;
+      const stored = map.get(log.participant_id);
+      if (!stored || new Date(sentAt).getTime() < new Date(stored.sentAt).getTime()) {
+        map.set(log.participant_id, {
+          sentAt,
+          emailType: log.email_type,
+        });
+      }
+    });
+    return map;
+  }, [emailLogs]);
 
   const filteredParticipants = useMemo(() => {
     return participants.filter((participant) => {
@@ -634,6 +652,7 @@ export function PeopleManagement() {
                 <TableRow>
                   <TableHead>Name</TableHead>
                   <TableHead>Email</TableHead>
+                  <TableHead className="text-center">First Email</TableHead>
                   <TableHead>Pretix ID</TableHead>
                   <TableHead>Captain</TableHead>
                   <TableHead>Status</TableHead>
@@ -648,6 +667,12 @@ export function PeopleManagement() {
                   const assignedRestaurant = assignmentRestaurantId
                     ? restaurantById.get(assignmentRestaurantId)
                     : undefined;
+                  const firstEmail = firstEmailByParticipant.get(participant.id);
+                  const firstEmailDate = firstEmail ? new Date(firstEmail.sentAt) : null;
+                  const firstEmailLabel =
+                    firstEmailDate && !Number.isNaN(firstEmailDate.getTime())
+                      ? firstEmailDate.toLocaleString()
+                      : null;
 
                   return (
                     <TableRow key={participant.id}>
@@ -665,6 +690,20 @@ export function PeopleManagement() {
                         <span className="text-sm text-foreground">
                           {participant.attendee_email}
                         </span>
+                      </TableCell>
+                      <TableCell className="text-center">
+                        {firstEmail && firstEmailLabel ? (
+                          <span
+                            className="inline-flex items-center justify-center rounded-full bg-emerald-500/15 p-1"
+                            title={`First email (${firstEmail.emailType.replace("_", " ")}) sent ${firstEmailLabel}`}
+                          >
+                            <MailCheck className="h-4 w-4 text-emerald-500" />
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center justify-center text-muted-foreground" title="No email sent yet">
+                            <Mail className="h-4 w-4" />
+                          </span>
+                        )}
                       </TableCell>
                       <TableCell>
                         <span className="text-xs text-muted-foreground">

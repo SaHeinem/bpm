@@ -1,14 +1,6 @@
 import { useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import {
-  Shuffle,
-  Users,
-  ClipboardList,
-  AlertTriangle,
-  FileDown,
-  Lock,
-  UserPlus,
-} from "lucide-react";
+import { Shuffle, Users, AlertTriangle, Mail, Lock, UserPlus } from "lucide-react";
 
 import { useParticipants } from "@/hooks/use-participants";
 import { useRestaurants } from "@/hooks/use-restaurants";
@@ -16,14 +8,13 @@ import { useAssignments } from "@/hooks/use-assignments";
 import { useEventStatus } from "@/hooks/use-event-status";
 import { useToast } from "@/hooks/use-toast";
 import { useActivityLogger } from "@/hooks/use-activity-log";
+import { useEmails } from "@/hooks/use-emails";
 import { supabase } from "@/services/supabase";
 import { queryKeys } from "@/lib/query-keys";
 import {
   buildRestaurantRosters,
-  generateAssignmentCsv,
   planCaptainAssignments,
   planParticipantAssignments,
-  buildRosterPrintHtml,
 } from "@/lib/assignment-utils";
 
 import {
@@ -55,14 +46,16 @@ export function DashboardOverview() {
   const { restaurants } = useRestaurants();
   const { assignments } = useAssignments();
   const { eventStatus, setEventStatusMutation } = useEventStatus();
+  const { sendBulkEmailsMutation } = useEmails();
 
   const [showReassignDialog, setShowReassignDialog] = useState(false);
-  const [showClearDialog, setShowClearDialog] = useState(false);
   const [isAssigningCaptains, setIsAssigningCaptains] = useState(false);
   const [isAssigningParticipants, setIsAssigningParticipants] = useState(false);
   const [isAssigningUnassigned, setIsAssigningUnassigned] = useState(false);
-  const [isClearingAssignments, setIsClearingAssignments] = useState(false);
   const [isFinalizing, setIsFinalizing] = useState(false);
+  const [pendingEmailType, setPendingEmailType] = useState<
+    "initial_assignment" | "final_assignment" | null
+  >(null);
 
   const participantById = useMemo(
     () =>
@@ -444,79 +437,16 @@ export function DashboardOverview() {
     }
   };
 
-  const handleClearAssignments = () => {
-    if (!assignments.length) {
-      toast({
-        title: "Nothing to clear",
-        description: "There are no assignments yet.",
-      });
-      return;
-    }
-    if (isFinalized) {
-      toast({
-        title: "Event finalized",
-        description:
-          "Assignments are locked. Unfinalize the event to clear them.",
-      });
-      return;
-    }
-    setShowClearDialog(true);
-  };
+  const handleSendBulkEmails = async (
+    emailType: "initial_assignment" | "final_assignment"
+  ) => {
+    if (sendBulkEmailsMutation.isPending) return;
 
-  const executeClearAssignments = async () => {
-    if (isClearingAssignments) return;
-
-    try {
-      setIsClearingAssignments(true);
-      // Clear all assignments
-      const { error } = await supabase
-        .from("assignments")
-        .delete()
-        .in(
-          "id",
-          assignments.map((a) => a.id)
-        );
-      if (error) throw error;
-
-      const nextState = restaurantsWithCaptain.length
-        ? "captains_assigned"
-        : "setup";
-      await setEventStatusMutation.mutateAsync(nextState);
-      await activityLogger.mutateAsync({
-        event_type: "assignment",
-        description: "Cleared all participant assignments",
-        actor: null,
-        metadata: {
-          previousAssignments: assignments.length,
-        },
-      });
-
-      await queryClient.invalidateQueries({
-        queryKey: queryKeys.assignments.all,
-      });
-      toast({
-        title: "Assignments cleared",
-        description: "All participants are now unassigned.",
-      });
-    } catch (error) {
-      console.error(error);
-      toast({
-        title: "Unable to clear assignments",
-        description:
-          error instanceof Error ? error.message : "Please try again.",
-        variant: "destructive",
-      });
-    } finally {
-      setIsClearingAssignments(false);
-      setShowClearDialog(false);
-    }
-  };
-
-  const handleExport = async () => {
     if (!assignments.length) {
       toast({
         title: "No assignments yet",
-        description: "Assign participants before exporting.",
+        description: "Assign participants before sending emails.",
+        variant: "destructive",
       });
       return;
     }
@@ -530,42 +460,53 @@ export function DashboardOverview() {
       }))
     );
 
-    const csv = generateAssignmentCsv(rosters);
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
-    const downloadUrl = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = downloadUrl;
-    link.download = `blind-peering-assignments-${new Date()
-      .toISOString()
-      .slice(0, 10)}.csv`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(downloadUrl);
+    const emails = rosters.flatMap((roster) => {
+      const tableGuests = roster.participants;
+      const allParticipants = [...tableGuests, roster.captain].filter(
+        (p): p is typeof participants[0] => Boolean(p)
+      );
 
-    const printWindow = window.open("", "_blank");
-    if (printWindow) {
-      printWindow.document.write(buildRosterPrintHtml(rosters));
-      printWindow.document.close();
-      printWindow.focus();
-      setTimeout(() => {
-        printWindow.print();
-      }, 300);
+      return allParticipants.map((participant) => ({
+        participant,
+        restaurant: roster.restaurant,
+        captain: roster.captain,
+        tableGuests: tableGuests.filter((p) => p.id !== participant.id),
+        emailType,
+      }));
+    });
+
+    if (emails.length === 0) {
+      toast({
+        title: "No recipients found",
+        description: "Ensure participants are assigned before sending emails.",
+        variant: "destructive",
+      });
+      return;
     }
 
-    await activityLogger.mutateAsync({
-      event_type: "assignment",
-      description: "Exported assignments",
-      actor: null,
-      metadata: {
-        restaurantCount: rosters.length,
-      },
-    });
-
-    toast({
-      title: "Export ready",
-      description: "CSV downloaded and print preview opened.",
-    });
+    try {
+      setPendingEmailType(emailType);
+      await sendBulkEmailsMutation.mutateAsync({ emails, emailType });
+      await activityLogger.mutateAsync({
+        event_type: "email",
+        description: `Sent ${emailType.replace("_", " ")} emails to all participants`,
+        actor: null,
+        metadata: { emailCount: emails.length, emailType },
+      });
+      toast({
+        title: "Emails sent",
+        description: `Successfully sent ${emails.length} assignment emails.`,
+      });
+    } catch (error) {
+      console.error(error);
+      toast({
+        title: "Failed to send emails",
+        description: error instanceof Error ? error.message : "Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setPendingEmailType(null);
+    }
   };
 
   const handleFinalize = async () => {
@@ -727,7 +668,7 @@ export function DashboardOverview() {
           <CardHeader>
             <CardTitle>Quick Actions</CardTitle>
             <CardDescription>
-              Run assignments or export details for captains.
+              Run assignments or notify attendees.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
@@ -803,26 +744,42 @@ export function DashboardOverview() {
             <Button
               variant="outline"
               className="w-full justify-start gap-2 bg-transparent"
-              onClick={handleClearAssignments}
+              onClick={() => handleSendBulkEmails("initial_assignment")}
               disabled={
-                isClearingAssignments || !assignments.length || isFinalized
+                sendBulkEmailsMutation.isPending || !assignments.length
+              }
+              title={
+                !assignments.length
+                  ? "Assign participants before sending emails."
+                  : undefined
               }
             >
-              {isClearingAssignments ? (
+              {sendBulkEmailsMutation.isPending && pendingEmailType === "initial_assignment" ? (
                 <Spinner className="h-4 w-4" />
               ) : (
-                <ClipboardList className="h-4 w-4" />
+                <Mail className="h-4 w-4" />
               )}
-              Clear assignments
+              Send Initial Emails
             </Button>
             <Button
               variant="outline"
               className="w-full justify-start gap-2 bg-transparent"
-              onClick={handleExport}
-              disabled={!assignments.length}
+              onClick={() => handleSendBulkEmails("final_assignment")}
+              disabled={
+                sendBulkEmailsMutation.isPending || !assignments.length
+              }
+              title={
+                !assignments.length
+                  ? "Assign participants before sending emails."
+                  : undefined
+              }
             >
-              <FileDown className="h-4 w-4" />
-              Export assignments
+              {sendBulkEmailsMutation.isPending && pendingEmailType === "final_assignment" ? (
+                <Spinner className="h-4 w-4" />
+              ) : (
+                <Mail className="h-4 w-4" />
+              )}
+              Send Final Emails
             </Button>
             <Button
               variant="outline"
@@ -893,14 +850,6 @@ export function DashboardOverview() {
         open={showReassignDialog}
         onOpenChange={setShowReassignDialog}
         onConfirm={executeParticipantAssignment}
-      />
-      <ShuffleWarningDialog
-        open={showClearDialog}
-        onOpenChange={setShowClearDialog}
-        onConfirm={executeClearAssignments}
-        title="Clear all assignments?"
-        description="This will unassign all participants from their restaurants. They will need to be reassigned. Table captains will remain assigned to their restaurants. This action cannot be undone."
-        confirmText="Clear assignments"
       />
     </div>
   );

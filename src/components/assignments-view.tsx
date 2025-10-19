@@ -8,6 +8,7 @@ import {
   Download,
   X,
   Mail,
+  MailCheck,
 } from "lucide-react";
 
 import { useAssignments } from "@/hooks/use-assignments";
@@ -63,7 +64,7 @@ export function AssignmentsView() {
   const { toast } = useToast();
   const { eventStatus, setEventStatusMutation } = useEventStatus();
   const activityLogger = useActivityLogger();
-  const { sendBulkEmailsMutation, sendEmailMutation } = useEmails();
+  const { emailLogs, sendEmailMutation } = useEmails();
 
   const [searchQuery, setSearchQuery] = useState("");
   const [activeTab, setActiveTab] = useState<"people" | "restaurants">(
@@ -72,10 +73,26 @@ export function AssignmentsView() {
   const [pendingAdd, setPendingAdd] = useState<Record<string, string>>({});
 
   const participantById = useMemo(
-    () =>
-      new Map(participants.map((participant) => [participant.id, participant])),
+      () =>
+        new Map(participants.map((participant) => [participant.id, participant])),
     [participants]
   );
+
+  const firstEmailByParticipant = useMemo(() => {
+    const map = new Map<string, { sentAt: string; emailType: string }>();
+    emailLogs.forEach((log) => {
+      const sentAt = log.sent_at ?? log.created_at;
+      if (!sentAt) return;
+      const stored = map.get(log.participant_id);
+      if (!stored || new Date(sentAt).getTime() < new Date(stored.sentAt).getTime()) {
+        map.set(log.participant_id, {
+          sentAt,
+          emailType: log.email_type,
+        });
+      }
+    });
+    return map;
+  }, [emailLogs]);
 
   const eligibleParticipants = useMemo(
     () =>
@@ -331,62 +348,6 @@ export function AssignmentsView() {
     });
   };
 
-  const handleSendAllEmails = async (emailType: "initial_assignment" | "final_assignment") => {
-    if (!assignments.length) {
-      toast({
-        title: "No assignments yet",
-        description: "Assign participants before sending emails.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    const rosters = buildRestaurantRosters(
-      restaurants,
-      participants,
-      assignments.map((assignment) => ({
-        participantId: assignment.participant_id,
-        restaurantId: assignment.restaurant_id,
-      }))
-    );
-
-    const emails = rosters.flatMap((roster) => {
-      const tableGuests = roster.participants;
-      const allParticipants = [...tableGuests, roster.captain].filter(
-        (p): p is typeof participants[0] => Boolean(p)
-      );
-
-      return allParticipants.map((participant) => ({
-        participant,
-        restaurant: roster.restaurant,
-        captain: roster.captain,
-        tableGuests: tableGuests.filter((p) => p.id !== participant.id),
-        emailType,
-      }));
-    });
-
-    try {
-      await sendBulkEmailsMutation.mutateAsync({ emails, emailType });
-      await activityLogger.mutateAsync({
-        event_type: "email",
-        description: `Sent ${emailType.replace("_", " ")} emails to all participants`,
-        actor: null,
-        metadata: { emailCount: emails.length, emailType },
-      });
-      toast({
-        title: "Emails sent",
-        description: `Successfully sent ${emails.length} assignment emails.`,
-      });
-    } catch (error) {
-      console.error(error);
-      toast({
-        title: "Failed to send emails",
-        description: error instanceof Error ? error.message : "Please try again.",
-        variant: "destructive",
-      });
-    }
-  };
-
   const handleSendIndividualEmail = async (participantId: string) => {
     const participant = participantById.get(participantId);
     if (!participant) return;
@@ -487,24 +448,6 @@ export function AssignmentsView() {
               <Download className="h-4 w-4" />
               Export
             </Button>
-            <Button
-              variant="outline"
-              className="gap-2 bg-transparent"
-              onClick={() => handleSendAllEmails("initial_assignment")}
-              disabled={!assignments.length || sendBulkEmailsMutation.isPending}
-            >
-              <Mail className="h-4 w-4" />
-              Send Initial Emails
-            </Button>
-            <Button
-              variant="outline"
-              className="gap-2 bg-transparent"
-              onClick={() => handleSendAllEmails("final_assignment")}
-              disabled={!assignments.length || sendBulkEmailsMutation.isPending}
-            >
-              <Mail className="h-4 w-4" />
-              Send Final Emails
-            </Button>
           </div>
         </CardContent>
       </Card>
@@ -550,14 +493,20 @@ export function AssignmentsView() {
                   {filteredPeople.map((participant) => {
                     const assignmentRestaurantId =
                       assignmentsByParticipant[participant.id] ?? "";
-                    const restaurant = assignmentRestaurantId
-                      ? restaurants.find(
-                          (item) => item.id === assignmentRestaurantId
-                        )
-                      : undefined;
-                    const isCaptain = participant.is_table_captain;
+                  const restaurant = assignmentRestaurantId
+                    ? restaurants.find(
+                        (item) => item.id === assignmentRestaurantId
+                      )
+                    : undefined;
+                  const isCaptain = participant.is_table_captain;
+                  const firstEmail = firstEmailByParticipant.get(participant.id);
+                  const firstEmailDate = firstEmail ? new Date(firstEmail.sentAt) : null;
+                  const firstEmailLabel =
+                    firstEmailDate && !Number.isNaN(firstEmailDate.getTime())
+                      ? firstEmailDate.toLocaleString()
+                      : null;
 
-                    return (
+                  return (
                       <div
                         key={participant.id}
                         className="flex flex-wrap items-center justify-between gap-4 rounded-lg border border-border bg-card p-4"
@@ -582,6 +531,14 @@ export function AssignmentsView() {
                               >
                                 Late joiner
                               </Badge>
+                            )}
+                            {firstEmail && firstEmailLabel && (
+                              <span
+                                className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-emerald-500/15"
+                                title={`First email (${firstEmail.emailType.replace("_", " ")}) sent ${firstEmailLabel}`}
+                              >
+                                <MailCheck className="h-3.5 w-3.5 text-emerald-500" />
+                              </span>
                             )}
                           </div>
                           <p className="text-xs text-muted-foreground">

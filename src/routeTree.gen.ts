@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as RestaurantsRouteImport } from './routes/restaurants'
 import { Route as PeopleRouteImport } from './routes/people'
+import { Route as EmailsRouteImport } from './routes/emails'
 import { Route as AssignmentsRouteImport } from './routes/assignments'
 import { Route as ActivityRouteImport } from './routes/activity'
 import { Route as IndexRouteImport } from './routes/index'
@@ -23,6 +24,11 @@ const RestaurantsRoute = RestaurantsRouteImport.update({
 const PeopleRoute = PeopleRouteImport.update({
   id: '/people',
   path: '/people',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const EmailsRoute = EmailsRouteImport.update({
+  id: '/emails',
+  path: '/emails',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AssignmentsRoute = AssignmentsRouteImport.update({
@@ -45,6 +51,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/activity': typeof ActivityRoute
   '/assignments': typeof AssignmentsRoute
+  '/emails': typeof EmailsRoute
   '/people': typeof PeopleRoute
   '/restaurants': typeof RestaurantsRoute
 }
@@ -52,6 +59,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/activity': typeof ActivityRoute
   '/assignments': typeof AssignmentsRoute
+  '/emails': typeof EmailsRoute
   '/people': typeof PeopleRoute
   '/restaurants': typeof RestaurantsRoute
 }
@@ -60,19 +68,33 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/activity': typeof ActivityRoute
   '/assignments': typeof AssignmentsRoute
+  '/emails': typeof EmailsRoute
   '/people': typeof PeopleRoute
   '/restaurants': typeof RestaurantsRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/activity' | '/assignments' | '/people' | '/restaurants'
+  fullPaths:
+    | '/'
+    | '/activity'
+    | '/assignments'
+    | '/emails'
+    | '/people'
+    | '/restaurants'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/activity' | '/assignments' | '/people' | '/restaurants'
+  to:
+    | '/'
+    | '/activity'
+    | '/assignments'
+    | '/emails'
+    | '/people'
+    | '/restaurants'
   id:
     | '__root__'
     | '/'
     | '/activity'
     | '/assignments'
+    | '/emails'
     | '/people'
     | '/restaurants'
   fileRoutesById: FileRoutesById
@@ -81,6 +103,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   ActivityRoute: typeof ActivityRoute
   AssignmentsRoute: typeof AssignmentsRoute
+  EmailsRoute: typeof EmailsRoute
   PeopleRoute: typeof PeopleRoute
   RestaurantsRoute: typeof RestaurantsRoute
 }
@@ -99,6 +122,13 @@ declare module '@tanstack/react-router' {
       path: '/people'
       fullPath: '/people'
       preLoaderRoute: typeof PeopleRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/emails': {
+      id: '/emails'
+      path: '/emails'
+      fullPath: '/emails'
+      preLoaderRoute: typeof EmailsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/assignments': {
@@ -129,6 +159,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   ActivityRoute: ActivityRoute,
   AssignmentsRoute: AssignmentsRoute,
+  EmailsRoute: EmailsRoute,
   PeopleRoute: PeopleRoute,
   RestaurantsRoute: RestaurantsRoute,
 }
