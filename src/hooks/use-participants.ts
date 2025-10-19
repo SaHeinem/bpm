@@ -16,7 +16,7 @@ export interface ParticipantPayload {
 }
 
 async function fetchParticipants(): Promise<Participant[]> {
-  const { data, error } = await supabase.from("participants").select("*").order("given_name", { ascending: true })
+  const { data, error } = await supabase.from("participants").select("*").order("created_at", { ascending: true })
   if (error) {
     throw error
   }
@@ -46,25 +46,48 @@ async function deleteParticipant(id: string): Promise<void> {
   }
 }
 
-async function bulkUpsertParticipants(payload: ParticipantPayload[]): Promise<void> {
+export interface BulkImportResult {
+  succeeded: number
+  failed: number
+  errors: Array<{ email: string; reason: string }>
+}
+
+async function bulkUpsertParticipants(payload: ParticipantPayload[]): Promise<BulkImportResult> {
   if (!payload.length) {
-    return
+    return { succeeded: 0, failed: 0, errors: [] }
   }
 
-  const { error } = await supabase.from("participants").upsert(
-    payload.map((participant) => ({
-      status: participant.status ?? "registered",
-      ...participant,
-    })),
-    {
-      onConflict: "pretix_id",
-      ignoreDuplicates: false,
-    },
-  )
-
-  if (error) {
-    throw error
+  const result: BulkImportResult = {
+    succeeded: 0,
+    failed: 0,
+    errors: [],
   }
+
+  // Process each participant individually to handle conflicts gracefully
+  for (const participant of payload) {
+    const { error } = await supabase.from("participants").upsert(
+      {
+        status: participant.status ?? "registered",
+        ...participant,
+      },
+      {
+        onConflict: "pretix_id",
+        ignoreDuplicates: false,
+      },
+    )
+
+    if (error) {
+      result.failed++
+      result.errors.push({
+        email: participant.attendee_email,
+        reason: error.message,
+      })
+    } else {
+      result.succeeded++
+    }
+  }
+
+  return result
 }
 
 export function useParticipants() {

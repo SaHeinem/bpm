@@ -1,157 +1,216 @@
-import { useMemo, useState } from "react"
-import { useQueryClient } from "@tanstack/react-query"
-import { Shuffle, Users, ClipboardList, AlertTriangle, FileDown, Lock, UserPlus } from "lucide-react"
+import { useMemo, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import {
+  Shuffle,
+  Users,
+  ClipboardList,
+  AlertTriangle,
+  FileDown,
+  Lock,
+  UserPlus,
+} from "lucide-react";
 
-import { useParticipants } from "@/hooks/use-participants"
-import { useRestaurants } from "@/hooks/use-restaurants"
-import { useAssignments } from "@/hooks/use-assignments"
-import { useEventStatus } from "@/hooks/use-event-status"
-import { useToast } from "@/hooks/use-toast"
-import { useActivityLogger } from "@/hooks/use-activity-log"
-import { supabase } from "@/services/supabase"
-import { queryKeys } from "@/lib/query-keys"
+import { useParticipants } from "@/hooks/use-participants";
+import { useRestaurants } from "@/hooks/use-restaurants";
+import { useAssignments } from "@/hooks/use-assignments";
+import { useEventStatus } from "@/hooks/use-event-status";
+import { useToast } from "@/hooks/use-toast";
+import { useActivityLogger } from "@/hooks/use-activity-log";
+import { supabase } from "@/services/supabase";
+import { queryKeys } from "@/lib/query-keys";
 import {
   buildRestaurantRosters,
   generateAssignmentCsv,
   planCaptainAssignments,
   planParticipantAssignments,
   buildRosterPrintHtml,
-} from "@/lib/assignment-utils"
+} from "@/lib/assignment-utils";
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
-import { Progress } from "@/components/ui/progress"
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { Spinner } from "@/components/ui/spinner"
-import { ShuffleWarningDialog } from "@/components/shuffle-warning-dialog"
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Progress } from "@/components/ui/progress";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Spinner } from "@/components/ui/spinner";
+import { ShuffleWarningDialog } from "@/components/shuffle-warning-dialog";
 
 const WORKFLOW_LABELS: Record<string, string> = {
   setup: "Setup",
   captains_assigned: "Captains Assigned",
   participants_assigned: "Participants Assigned",
   finalized: "Finalized",
-}
+};
 
 export function DashboardOverview() {
-  const queryClient = useQueryClient()
-  const { toast } = useToast()
-  const activityLogger = useActivityLogger()
-  const { participants } = useParticipants()
-  const { restaurants } = useRestaurants()
-  const { assignments } = useAssignments()
-  const { eventStatus, setEventStatusMutation } = useEventStatus()
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+  const activityLogger = useActivityLogger();
+  const { participants } = useParticipants();
+  const { restaurants } = useRestaurants();
+  const { assignments } = useAssignments();
+  const { eventStatus, setEventStatusMutation } = useEventStatus();
 
-  const [showReassignDialog, setShowReassignDialog] = useState(false)
-  const [showClearDialog, setShowClearDialog] = useState(false)
-  const [isAssigningCaptains, setIsAssigningCaptains] = useState(false)
-  const [isAssigningParticipants, setIsAssigningParticipants] = useState(false)
-  const [isAssigningUnassigned, setIsAssigningUnassigned] = useState(false)
-  const [isClearingAssignments, setIsClearingAssignments] = useState(false)
-  const [isFinalizing, setIsFinalizing] = useState(false)
+  const [showReassignDialog, setShowReassignDialog] = useState(false);
+  const [showClearDialog, setShowClearDialog] = useState(false);
+  const [isAssigningCaptains, setIsAssigningCaptains] = useState(false);
+  const [isAssigningParticipants, setIsAssigningParticipants] = useState(false);
+  const [isAssigningUnassigned, setIsAssigningUnassigned] = useState(false);
+  const [isClearingAssignments, setIsClearingAssignments] = useState(false);
+  const [isFinalizing, setIsFinalizing] = useState(false);
 
-  const participantById = useMemo(() => new Map(participants.map((participant) => [participant.id, participant])), [participants])
+  const participantById = useMemo(
+    () =>
+      new Map(participants.map((participant) => [participant.id, participant])),
+    [participants]
+  );
 
   const assignableParticipants = useMemo(
     () =>
-      participants.filter((participant) => participant.status === "registered" || participant.status === "late_joiner"),
-    [participants],
-  )
+      participants.filter(
+        (participant) =>
+          participant.status === "registered" ||
+          participant.status === "late_joiner"
+      ),
+    [participants]
+  );
 
   const nonCaptainParticipants = useMemo(
-    () => assignableParticipants.filter((participant) => !participant.is_table_captain),
-    [assignableParticipants],
-  )
+    () =>
+      assignableParticipants.filter(
+        (participant) => !participant.is_table_captain
+      ),
+    [assignableParticipants]
+  );
 
   const unassignedCount = useMemo(() => {
-    const assignedParticipantIds = new Set(assignments.map(a => a.participant_id))
-    const captainIds = new Set(restaurants.map(r => r.assigned_captain_id).filter(Boolean))
+    const assignedParticipantIds = new Set(
+      assignments.map((a) => a.participant_id)
+    );
+    const captainIds = new Set(
+      restaurants.map((r) => r.assigned_captain_id).filter(Boolean)
+    );
     return assignableParticipants.filter(
-      p => !assignedParticipantIds.has(p.id) && !captainIds.has(p.id)
-    ).length
-  }, [assignableParticipants, assignments, restaurants])
+      (p) => !assignedParticipantIds.has(p.id) && !captainIds.has(p.id)
+    ).length;
+  }, [assignableParticipants, assignments, restaurants]);
 
   const activeCaptains = useMemo(
-    () => participants.filter((participant) => participant.is_table_captain && participant.status !== "cancelled"),
-    [participants],
-  )
+    () =>
+      participants.filter(
+        (participant) =>
+          participant.is_table_captain && participant.status !== "cancelled"
+      ),
+    [participants]
+  );
 
   const restaurantsWithCaptain = useMemo(
-    () => restaurants.filter((restaurant) => Boolean(restaurant.assigned_captain_id)),
-    [restaurants],
-  )
+    () =>
+      restaurants.filter((restaurant) =>
+        Boolean(restaurant.assigned_captain_id)
+      ),
+    [restaurants]
+  );
 
-  const totalCapacity = useMemo(() => restaurants.reduce((total, restaurant) => total + restaurant.max_seats, 0), [restaurants])
-  const nonCaptainCapacity = Math.max(totalCapacity - restaurants.length, 0)
+  const totalCapacity = useMemo(
+    () =>
+      restaurants.reduce(
+        (total, restaurant) => total + restaurant.max_seats,
+        0
+      ),
+    [restaurants]
+  );
+  const nonCaptainCapacity = Math.max(totalCapacity - restaurants.length, 0);
 
   const assignedParticipantsCount = useMemo(() => {
     return assignments.filter((assignment) => {
-      const participant = participantById.get(assignment.participant_id)
-      return participant && participant.status !== "cancelled"
-    }).length
-  }, [assignments, participantById])
+      const participant = participantById.get(assignment.participant_id);
+      return participant && participant.status !== "cancelled";
+    }).length;
+  }, [assignments, participantById]);
 
   const assignedNonCaptains = useMemo(() => {
     return assignments.filter((assignment) => {
-      const participant = participantById.get(assignment.participant_id)
-      return participant && participant.status !== "cancelled" && !participant.is_table_captain
-    }).length
-  }, [assignments, participantById])
+      const participant = participantById.get(assignment.participant_id);
+      return (
+        participant &&
+        participant.status !== "cancelled" &&
+        !participant.is_table_captain
+      );
+    }).length;
+  }, [assignments, participantById]);
 
-  const participantsAwaitingAssignment = Math.max(nonCaptainParticipants.length - assignedNonCaptains, 0)
-  const capacityShortfall = nonCaptainParticipants.length > nonCaptainCapacity
-  const captainShortfall = activeCaptains.length < restaurants.length
+  const participantsAwaitingAssignment = Math.max(
+    nonCaptainParticipants.length - assignedNonCaptains,
+    0
+  );
+  const capacityShortfall = nonCaptainParticipants.length > nonCaptainCapacity;
+  const captainShortfall = activeCaptains.length < restaurants.length;
 
-  const assignmentProgress = nonCaptainCapacity === 0 ? 0 : Math.min((assignedNonCaptains / nonCaptainCapacity) * 100, 100)
-  const captainCoverage = restaurants.length === 0 ? 0 : Math.min((restaurantsWithCaptain.length / restaurants.length) * 100, 100)
+  const assignmentProgress =
+    nonCaptainCapacity === 0
+      ? 0
+      : Math.min((assignedNonCaptains / nonCaptainCapacity) * 100, 100);
+  const captainCoverage =
+    restaurants.length === 0
+      ? 0
+      : Math.min(
+          (restaurantsWithCaptain.length / restaurants.length) * 100,
+          100
+        );
 
-  const workflowLabel = WORKFLOW_LABELS[eventStatus.state] ?? "Unknown"
-  const isFinalized = eventStatus.state === "finalized"
+  const workflowLabel = WORKFLOW_LABELS[eventStatus.state] ?? "Unknown";
+  const isFinalized = eventStatus.state === "finalized";
   const lastUpdatedDisplay =
     eventStatus.updated_at && !eventStatus.updated_at.startsWith("1970-")
       ? new Date(eventStatus.updated_at).toLocaleString()
-      : "—"
+      : "—";
 
   const handleAssignCaptains = async () => {
-    if (isAssigningCaptains) return
+    if (isAssigningCaptains) return;
     if (isFinalized) {
       toast({
         title: "Event finalized",
         description: "Captains cannot be reassigned after finalization.",
-      })
-      return
+      });
+      return;
     }
     if (!restaurants.length) {
       toast({
         title: "No restaurants available",
         description: "Add restaurants before assigning captains.",
         variant: "destructive",
-      })
-      return
+      });
+      return;
     }
     if (activeCaptains.length < restaurants.length) {
       toast({
         title: "Not enough captains",
         description: `You need ${restaurants.length} captains but only have ${activeCaptains.length}.`,
         variant: "destructive",
-      })
-      return
+      });
+      return;
     }
 
     try {
-      setIsAssigningCaptains(true)
-      const plan = planCaptainAssignments(restaurants, activeCaptains)
+      setIsAssigningCaptains(true);
+      const plan = planCaptainAssignments(restaurants, activeCaptains);
 
       // Update each restaurant's captain assignment individually
       for (const { restaurantId, captainId } of plan) {
         const { error } = await supabase
           .from("restaurants")
           .update({ assigned_captain_id: captainId })
-          .eq("id", restaurantId)
-        if (error) throw error
+          .eq("id", restaurantId);
+        if (error) throw error;
       }
 
-      await setEventStatusMutation.mutateAsync("captains_assigned")
+      await setEventStatusMutation.mutateAsync("captains_assigned");
       await activityLogger.mutateAsync({
         event_type: "captain",
         description: `Assigned ${plan.length} captains`,
@@ -159,67 +218,79 @@ export function DashboardOverview() {
         metadata: {
           restaurantCount: plan.length,
         },
-      })
+      });
 
-      await queryClient.invalidateQueries({ queryKey: queryKeys.restaurants.all })
+      await queryClient.invalidateQueries({
+        queryKey: queryKeys.restaurants.all,
+      });
       toast({
         title: "Captains assigned",
         description: "Each restaurant now has a table captain.",
-      })
+      });
     } catch (error) {
-      console.error(error)
+      console.error(error);
       toast({
         title: "Failed to assign captains",
-        description: error instanceof Error ? error.message : "Please try again.",
+        description:
+          error instanceof Error ? error.message : "Please try again.",
         variant: "destructive",
-      })
+      });
     } finally {
-      setIsAssigningCaptains(false)
+      setIsAssigningCaptains(false);
     }
-  }
+  };
 
   const executeParticipantAssignment = async () => {
-    if (isAssigningParticipants) return
+    if (isAssigningParticipants) return;
     if (!restaurantsWithCaptain.length) {
       toast({
         title: "Assign captains first",
-        description: "Participants can only be placed once all restaurants have captains.",
+        description:
+          "Participants can only be placed once all restaurants have captains.",
         variant: "destructive",
-      })
-      return
+      });
+      return;
     }
     if (!nonCaptainParticipants.length) {
       toast({
         title: "No participants to assign",
         description: "Import or mark attendees as registered before assigning.",
-      })
-      return
+      });
+      return;
     }
 
     try {
-      setIsAssigningParticipants(true)
-      const { assignments: plannedAssignments, unassigned } = planParticipantAssignments(restaurants, assignableParticipants)
+      setIsAssigningParticipants(true);
+      const { assignments: plannedAssignments, unassigned } =
+        planParticipantAssignments(restaurants, assignableParticipants);
 
       // Clear all existing assignments
       if (assignments.length > 0) {
         const { error: clearError } = await supabase
           .from("assignments")
           .delete()
-          .in("id", assignments.map(a => a.id))
-        if (clearError) throw clearError
+          .in(
+            "id",
+            assignments.map((a) => a.id)
+          );
+        if (clearError) throw clearError;
       }
 
       if (plannedAssignments.length) {
-        const payload = plannedAssignments.map(({ participantId, restaurantId }) => ({
-          participant_id: participantId,
-          restaurant_id: restaurantId,
-          assigned_at: new Date().toISOString(),
-        }))
-        const { error: insertError } = await supabase.from("assignments").insert(payload)
-        if (insertError) throw insertError
+        const payload = plannedAssignments.map(
+          ({ participantId, restaurantId }) => ({
+            participant_id: participantId,
+            restaurant_id: restaurantId,
+            assigned_at: new Date().toISOString(),
+          })
+        );
+        const { error: insertError } = await supabase
+          .from("assignments")
+          .insert(payload);
+        if (insertError) throw insertError;
       }
 
-      await setEventStatusMutation.mutateAsync("participants_assigned")
+      await setEventStatusMutation.mutateAsync("participants_assigned");
       await activityLogger.mutateAsync({
         event_type: "assignment",
         description: `Assigned ${plannedAssignments.length} participants`,
@@ -227,105 +298,118 @@ export function DashboardOverview() {
         metadata: {
           unassignedCount: unassigned.length,
         },
-      })
+      });
 
-      await queryClient.invalidateQueries({ queryKey: queryKeys.assignments.all })
+      await queryClient.invalidateQueries({
+        queryKey: queryKeys.assignments.all,
+      });
       toast({
         title: "Participants assigned",
         description:
           plannedAssignments.length === 0
             ? "No participants could be assigned."
             : unassigned.length
-              ? `${plannedAssignments.length} assigned. ${unassigned.length} could not be placed due to capacity.`
-              : "All eligible participants have been assigned.",
-      })
+            ? `${plannedAssignments.length} assigned. ${unassigned.length} could not be placed due to capacity.`
+            : "All eligible participants have been assigned.",
+      });
     } catch (error) {
-      console.error(error)
+      console.error(error);
       toast({
         title: "Assignment failed",
-        description: error instanceof Error ? error.message : "Please try again.",
+        description:
+          error instanceof Error ? error.message : "Please try again.",
         variant: "destructive",
-      })
+      });
     } finally {
-      setIsAssigningParticipants(false)
-      setShowReassignDialog(false)
+      setIsAssigningParticipants(false);
+      setShowReassignDialog(false);
     }
-  }
+  };
 
   const handleAssignParticipants = () => {
     if (isFinalized) {
       toast({
         title: "Event finalized",
-        description: "Assignments are locked. Unfinalize the event to reshuffle.",
-      })
-      return
+        description:
+          "Assignments are locked. Unfinalize the event to reshuffle.",
+      });
+      return;
     }
     if (capacityShortfall) {
       toast({
         title: "Capacity exceeded",
         description: "Reduce participants or add restaurants before shuffling.",
         variant: "destructive",
-      })
-      return
+      });
+      return;
     }
     // Only show warning dialog if there are existing assignments
     if (assignments.length > 0) {
-      setShowReassignDialog(true)
+      setShowReassignDialog(true);
     } else {
-      void executeParticipantAssignment()
+      void executeParticipantAssignment();
     }
-  }
+  };
 
   const handleAssignUnassigned = async () => {
-    if (isAssigningUnassigned) return
+    if (isAssigningUnassigned) return;
     if (isFinalized) {
       toast({
         title: "Event finalized",
-        description: "Assignments are locked. Unfinalize the event to reshuffle.",
-      })
-      return
+        description:
+          "Assignments are locked. Unfinalize the event to reshuffle.",
+      });
+      return;
     }
     if (!restaurantsWithCaptain.length) {
       toast({
         title: "Assign captains first",
-        description: "Participants can only be placed once all restaurants have captains.",
+        description:
+          "Participants can only be placed once all restaurants have captains.",
         variant: "destructive",
-      })
-      return
+      });
+      return;
     }
 
     try {
-      setIsAssigningUnassigned(true)
+      setIsAssigningUnassigned(true);
 
       // Get IDs of already assigned participants
-      const assignedParticipantIds = new Set(assignments.map(a => a.participant_id))
+      const assignedParticipantIds = new Set(
+        assignments.map((a) => a.participant_id)
+      );
 
       // Filter to only unassigned, assignable participants
       const unassignedParticipants = assignableParticipants.filter(
-        p => !assignedParticipantIds.has(p.id) && !p.is_table_captain
-      )
+        (p) => !assignedParticipantIds.has(p.id) && !p.is_table_captain
+      );
 
       if (unassignedParticipants.length === 0) {
         toast({
           title: "No unassigned participants",
           description: "All eligible participants are already assigned.",
-        })
-        return
+        });
+        return;
       }
 
-      const { assignments: plannedAssignments, unassigned } = planParticipantAssignments(restaurants, unassignedParticipants)
+      const { assignments: plannedAssignments, unassigned } =
+        planParticipantAssignments(restaurants, unassignedParticipants);
 
       if (plannedAssignments.length) {
-        const payload = plannedAssignments.map(({ participantId, restaurantId }) => ({
-          participant_id: participantId,
-          restaurant_id: restaurantId,
-          assigned_at: new Date().toISOString(),
-        }))
-        const { error: insertError } = await supabase.from("assignments").insert(payload)
-        if (insertError) throw insertError
+        const payload = plannedAssignments.map(
+          ({ participantId, restaurantId }) => ({
+            participant_id: participantId,
+            restaurant_id: restaurantId,
+            assigned_at: new Date().toISOString(),
+          })
+        );
+        const { error: insertError } = await supabase
+          .from("assignments")
+          .insert(payload);
+        if (insertError) throw insertError;
       }
 
-      await setEventStatusMutation.mutateAsync("participants_assigned")
+      await setEventStatusMutation.mutateAsync("participants_assigned");
       await activityLogger.mutateAsync({
         event_type: "assignment",
         description: `Assigned ${plannedAssignments.length} unassigned participants`,
@@ -333,62 +417,71 @@ export function DashboardOverview() {
         metadata: {
           unassignedCount: unassigned.length,
         },
-      })
+      });
 
-      await queryClient.invalidateQueries({ queryKey: queryKeys.assignments.all })
+      await queryClient.invalidateQueries({
+        queryKey: queryKeys.assignments.all,
+      });
       toast({
         title: "Unassigned participants placed",
         description:
           plannedAssignments.length === 0
             ? "No participants could be assigned."
             : unassigned.length
-              ? `${plannedAssignments.length} assigned. ${unassigned.length} could not be placed due to capacity.`
-              : `All ${plannedAssignments.length} unassigned participants have been placed.`,
-      })
+            ? `${plannedAssignments.length} assigned. ${unassigned.length} could not be placed due to capacity.`
+            : `All ${plannedAssignments.length} unassigned participants have been placed.`,
+      });
     } catch (error) {
-      console.error(error)
+      console.error(error);
       toast({
         title: "Assignment failed",
-        description: error instanceof Error ? error.message : "Please try again.",
+        description:
+          error instanceof Error ? error.message : "Please try again.",
         variant: "destructive",
-      })
+      });
     } finally {
-      setIsAssigningUnassigned(false)
+      setIsAssigningUnassigned(false);
     }
-  }
+  };
 
   const handleClearAssignments = () => {
     if (!assignments.length) {
       toast({
         title: "Nothing to clear",
         description: "There are no assignments yet.",
-      })
-      return
+      });
+      return;
     }
     if (isFinalized) {
       toast({
         title: "Event finalized",
-        description: "Assignments are locked. Unfinalize the event to clear them.",
-      })
-      return
+        description:
+          "Assignments are locked. Unfinalize the event to clear them.",
+      });
+      return;
     }
-    setShowClearDialog(true)
-  }
+    setShowClearDialog(true);
+  };
 
   const executeClearAssignments = async () => {
-    if (isClearingAssignments) return
+    if (isClearingAssignments) return;
 
     try {
-      setIsClearingAssignments(true)
+      setIsClearingAssignments(true);
       // Clear all assignments
       const { error } = await supabase
         .from("assignments")
         .delete()
-        .in("id", assignments.map(a => a.id))
-      if (error) throw error
+        .in(
+          "id",
+          assignments.map((a) => a.id)
+        );
+      if (error) throw error;
 
-      const nextState = restaurantsWithCaptain.length ? "captains_assigned" : "setup"
-      await setEventStatusMutation.mutateAsync(nextState)
+      const nextState = restaurantsWithCaptain.length
+        ? "captains_assigned"
+        : "setup";
+      await setEventStatusMutation.mutateAsync(nextState);
       await activityLogger.mutateAsync({
         event_type: "assignment",
         description: "Cleared all participant assignments",
@@ -396,33 +489,36 @@ export function DashboardOverview() {
         metadata: {
           previousAssignments: assignments.length,
         },
-      })
+      });
 
-      await queryClient.invalidateQueries({ queryKey: queryKeys.assignments.all })
+      await queryClient.invalidateQueries({
+        queryKey: queryKeys.assignments.all,
+      });
       toast({
         title: "Assignments cleared",
         description: "All participants are now unassigned.",
-      })
+      });
     } catch (error) {
-      console.error(error)
+      console.error(error);
       toast({
         title: "Unable to clear assignments",
-        description: error instanceof Error ? error.message : "Please try again.",
+        description:
+          error instanceof Error ? error.message : "Please try again.",
         variant: "destructive",
-      })
+      });
     } finally {
-      setIsClearingAssignments(false)
-      setShowClearDialog(false)
+      setIsClearingAssignments(false);
+      setShowClearDialog(false);
     }
-  }
+  };
 
   const handleExport = async () => {
     if (!assignments.length) {
       toast({
         title: "No assignments yet",
         description: "Assign participants before exporting.",
-      })
-      return
+      });
+      return;
     }
 
     const rosters = buildRestaurantRosters(
@@ -431,28 +527,30 @@ export function DashboardOverview() {
       assignments.map((assignment) => ({
         participantId: assignment.participant_id,
         restaurantId: assignment.restaurant_id,
-      })),
-    )
+      }))
+    );
 
-    const csv = generateAssignmentCsv(rosters)
-    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" })
-    const downloadUrl = URL.createObjectURL(blob)
-    const link = document.createElement("a")
-    link.href = downloadUrl
-    link.download = `blind-peering-assignments-${new Date().toISOString().slice(0, 10)}.csv`
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
-    URL.revokeObjectURL(downloadUrl)
+    const csv = generateAssignmentCsv(rosters);
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const downloadUrl = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = downloadUrl;
+    link.download = `blind-peering-assignments-${new Date()
+      .toISOString()
+      .slice(0, 10)}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(downloadUrl);
 
-    const printWindow = window.open("", "_blank")
+    const printWindow = window.open("", "_blank");
     if (printWindow) {
-      printWindow.document.write(buildRosterPrintHtml(rosters))
-      printWindow.document.close()
-      printWindow.focus()
+      printWindow.document.write(buildRosterPrintHtml(rosters));
+      printWindow.document.close();
+      printWindow.focus();
       setTimeout(() => {
-        printWindow.print()
-      }, 300)
+        printWindow.print();
+      }, 300);
     }
 
     await activityLogger.mutateAsync({
@@ -462,35 +560,35 @@ export function DashboardOverview() {
       metadata: {
         restaurantCount: rosters.length,
       },
-    })
+    });
 
     toast({
       title: "Export ready",
       description: "CSV downloaded and print preview opened.",
-    })
-  }
+    });
+  };
 
   const handleFinalize = async () => {
-    if (isFinalizing) return
+    if (isFinalizing) return;
     if (isFinalized) {
       toast({
         title: "Already finalized",
         description: "The event is already locked.",
-      })
-      return
+      });
+      return;
     }
     if (assignments.length === 0) {
       toast({
         title: "Assign participants first",
         description: "Finalize after participants have been placed.",
         variant: "destructive",
-      })
-      return
+      });
+      return;
     }
 
     try {
-      setIsFinalizing(true)
-      await setEventStatusMutation.mutateAsync("finalized")
+      setIsFinalizing(true);
+      await setEventStatusMutation.mutateAsync("finalized");
       await activityLogger.mutateAsync({
         event_type: "assignment",
         description: "Event finalized",
@@ -498,29 +596,34 @@ export function DashboardOverview() {
         metadata: {
           assignments: assignments.length,
         },
-      })
+      });
       toast({
         title: "Event finalized",
         description: "Assignments are now locked.",
-      })
+      });
     } catch (error) {
-      console.error(error)
+      console.error(error);
       toast({
         title: "Unable to finalize",
-        description: error instanceof Error ? error.message : "Please try again.",
+        description:
+          error instanceof Error ? error.message : "Please try again.",
         variant: "destructive",
-      })
+      });
     } finally {
-      setIsFinalizing(false)
+      setIsFinalizing(false);
     }
-  }
+  };
 
   return (
     <div className="space-y-6 p-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-3xl font-bold tracking-tight text-foreground">Event Dashboard</h2>
-          <p className="text-muted-foreground">Monitor readiness across restaurants, captains, and participants.</p>
+          <h2 className="text-3xl font-bold tracking-tight text-foreground">
+            Event Dashboard
+          </h2>
+          <p className="text-muted-foreground">
+            Monitor readiness across restaurants, captains, and participants.
+          </p>
         </div>
         <Badge variant="secondary" className="text-sm">
           State: {workflowLabel}
@@ -535,32 +638,46 @@ export function DashboardOverview() {
           </CardHeader>
           <CardContent>
             <div className="flex items-baseline gap-2">
-              <span className="text-3xl font-semibold">{participants.length}</span>
+              <span className="text-3xl font-semibold">
+                {participants.length}
+              </span>
               <Badge variant="outline">{unassignedCount} unassigned</Badge>
             </div>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Captains Ready</CardTitle>
-            <CardDescription>Active captains vs tables needed</CardDescription>
+            <CardTitle className="text-sm font-medium">
+              Captains Ready
+            </CardTitle>
+            <CardDescription>
+              Active captains vs restaurants needed
+            </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="flex items-baseline gap-2">
-              <span className="text-3xl font-semibold">{activeCaptains.length}</span>
-              <Badge variant="outline">{restaurants.length} tables</Badge>
+              <span className="text-3xl font-semibold">
+                {activeCaptains.length}
+              </span>
+              <Badge variant="outline">{restaurants.length} restaurants</Badge>
             </div>
             <Progress value={captainCoverage} className="h-2" />
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium">Assignments Progress</CardTitle>
-            <CardDescription>Participants placed into restaurants</CardDescription>
+            <CardTitle className="text-sm font-medium">
+              Assignments Progress
+            </CardTitle>
+            <CardDescription>
+              Participants placed into restaurants
+            </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="flex items-baseline gap-2">
-              <span className="text-3xl font-semibold">{assignedNonCaptains}</span>
+              <span className="text-3xl font-semibold">
+                {assignedNonCaptains}
+              </span>
               <Badge variant="outline">{nonCaptainCapacity} capacity</Badge>
             </div>
             <Progress value={assignmentProgress} className="h-2" />
@@ -573,7 +690,9 @@ export function DashboardOverview() {
           </CardHeader>
           <CardContent>
             <div className="flex items-baseline gap-2">
-              <span className="text-3xl font-semibold">{restaurants.length}</span>
+              <span className="text-3xl font-semibold">
+                {restaurants.length}
+              </span>
               <Badge variant="outline">{totalCapacity} seats</Badge>
             </div>
           </CardContent>
@@ -587,14 +706,16 @@ export function DashboardOverview() {
           <AlertDescription>
             {capacityShortfall && (
               <p>
-                There are {nonCaptainParticipants.length} assignable participants but only {nonCaptainCapacity} seats for
-                attendees. Add more restaurants or reduce registrations.
+                There are {nonCaptainParticipants.length} assignable
+                participants but only {nonCaptainCapacity} seats for attendees.
+                Add more restaurants or reduce registrations.
               </p>
             )}
             {captainShortfall && (
               <p>
-                Only {activeCaptains.length} captains available for {restaurants.length} restaurants. Recruit additional captains
-                before assigning tables.
+                Only {activeCaptains.length} captains available for{" "}
+                {restaurants.length} restaurants. Recruit additional captains
+                before assigning Restaurants.
               </p>
             )}
           </AlertDescription>
@@ -605,7 +726,9 @@ export function DashboardOverview() {
         <Card>
           <CardHeader>
             <CardTitle>Quick Actions</CardTitle>
-            <CardDescription>Run assignments or export details for captains.</CardDescription>
+            <CardDescription>
+              Run assignments or export details for captains.
+            </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
             <Button
@@ -617,54 +740,79 @@ export function DashboardOverview() {
                 captainShortfall
                   ? "You need at least as many captains as restaurants."
                   : isFinalized
-                    ? "Assignments are locked."
-                    : undefined
+                  ? "Assignments are locked."
+                  : undefined
               }
             >
-              {isAssigningCaptains ? <Spinner className="h-4 w-4" /> : <Users className="h-4 w-4" />}
+              {isAssigningCaptains ? (
+                <Spinner className="h-4 w-4" />
+              ) : (
+                <Users className="h-4 w-4" />
+              )}
               Assign all captains
             </Button>
             <Button
               variant="outline"
               className="w-full justify-start gap-2 bg-transparent"
               onClick={handleAssignParticipants}
-              disabled={isAssigningParticipants || isFinalized || capacityShortfall || captainShortfall}
+              disabled={
+                isAssigningParticipants ||
+                isFinalized ||
+                capacityShortfall ||
+                captainShortfall
+              }
               title={
                 capacityShortfall
                   ? "Total capacity is too low for attendees."
                   : captainShortfall
-                    ? "Assign captains before shuffling participants."
-                    : isFinalized
-                      ? "Assignments are locked."
-                      : undefined
+                  ? "Assign captains before shuffling participants."
+                  : isFinalized
+                  ? "Assignments are locked."
+                  : undefined
               }
             >
-              {isAssigningParticipants ? <Spinner className="h-4 w-4" /> : <Shuffle className="h-4 w-4" />}
+              {isAssigningParticipants ? (
+                <Spinner className="h-4 w-4" />
+              ) : (
+                <Shuffle className="h-4 w-4" />
+              )}
               Assign all participants
             </Button>
             <Button
               variant="outline"
               className="w-full justify-start gap-2 bg-transparent"
               onClick={handleAssignUnassigned}
-              disabled={isAssigningUnassigned || isFinalized || captainShortfall}
+              disabled={
+                isAssigningUnassigned || isFinalized || captainShortfall
+              }
               title={
                 captainShortfall
                   ? "Assign captains before placing participants."
                   : isFinalized
-                    ? "Assignments are locked."
-                    : undefined
+                  ? "Assignments are locked."
+                  : undefined
               }
             >
-              {isAssigningUnassigned ? <Spinner className="h-4 w-4" /> : <UserPlus className="h-4 w-4" />}
-              Assign unassigned to open tables
+              {isAssigningUnassigned ? (
+                <Spinner className="h-4 w-4" />
+              ) : (
+                <UserPlus className="h-4 w-4" />
+              )}
+              Assign unassigned to open Restaurants
             </Button>
             <Button
               variant="outline"
               className="w-full justify-start gap-2 bg-transparent"
               onClick={handleClearAssignments}
-              disabled={isClearingAssignments || !assignments.length || isFinalized}
+              disabled={
+                isClearingAssignments || !assignments.length || isFinalized
+              }
             >
-              {isClearingAssignments ? <Spinner className="h-4 w-4" /> : <ClipboardList className="h-4 w-4" />}
+              {isClearingAssignments ? (
+                <Spinner className="h-4 w-4" />
+              ) : (
+                <ClipboardList className="h-4 w-4" />
+              )}
               Clear assignments
             </Button>
             <Button
@@ -682,7 +830,11 @@ export function DashboardOverview() {
               onClick={handleFinalize}
               disabled={isFinalizing || isFinalized}
             >
-              {isFinalizing ? <Spinner className="h-4 w-4" /> : <Lock className="h-4 w-4" />}
+              {isFinalizing ? (
+                <Spinner className="h-4 w-4" />
+              ) : (
+                <Lock className="h-4 w-4" />
+              )}
               Finalize event
             </Button>
           </CardContent>
@@ -690,36 +842,58 @@ export function DashboardOverview() {
         <Card>
           <CardHeader>
             <CardTitle>Status Overview</CardTitle>
-            <CardDescription>Track outstanding items before you finalize.</CardDescription>
+            <CardDescription>
+              Track outstanding items before you finalize.
+            </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">Last updated</span>
-              <span className="text-sm font-medium text-foreground">{lastUpdatedDisplay}</span>
+              <span className="text-sm text-muted-foreground">
+                Last updated
+              </span>
+              <span className="text-sm font-medium text-foreground">
+                {lastUpdatedDisplay}
+              </span>
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">Workflow state</span>
+              <span className="text-sm text-muted-foreground">
+                Workflow state
+              </span>
               <Badge>{workflowLabel}</Badge>
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">Restaurants with captains</span>
+              <span className="text-sm text-muted-foreground">
+                Restaurants with captains
+              </span>
               <span className="text-sm font-medium text-foreground">
                 {restaurantsWithCaptain.length} / {restaurants.length}
               </span>
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">Participants awaiting placement</span>
-              <span className="text-sm font-medium text-foreground">{participantsAwaitingAssignment}</span>
+              <span className="text-sm text-muted-foreground">
+                Participants awaiting placement
+              </span>
+              <span className="text-sm font-medium text-foreground">
+                {participantsAwaitingAssignment}
+              </span>
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">Total assignments</span>
-              <span className="text-sm font-medium text-foreground">{assignedParticipantsCount}</span>
+              <span className="text-sm text-muted-foreground">
+                Total assignments
+              </span>
+              <span className="text-sm font-medium text-foreground">
+                {assignedParticipantsCount}
+              </span>
             </div>
           </CardContent>
         </Card>
       </div>
 
-      <ShuffleWarningDialog open={showReassignDialog} onOpenChange={setShowReassignDialog} onConfirm={executeParticipantAssignment} />
+      <ShuffleWarningDialog
+        open={showReassignDialog}
+        onOpenChange={setShowReassignDialog}
+        onConfirm={executeParticipantAssignment}
+      />
       <ShuffleWarningDialog
         open={showClearDialog}
         onOpenChange={setShowClearDialog}
@@ -729,5 +903,5 @@ export function DashboardOverview() {
         confirmText="Clear assignments"
       />
     </div>
-  )
+  );
 }

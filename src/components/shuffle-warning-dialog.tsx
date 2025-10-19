@@ -1,4 +1,3 @@
-
 import {
   AlertDialog,
   AlertDialogAction,
@@ -8,25 +7,25 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from "@/components/ui/alert-dialog"
-import { AlertTriangle } from "lucide-react"
+} from "@/components/ui/alert-dialog";
+import { AlertTriangle } from "lucide-react";
 
 interface ShuffleWarningDialogProps {
-  open: boolean
-  onOpenChange: (open: boolean) => void
-  onConfirm: () => void
-  title?: string
-  description?: string
-  confirmText?: string
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onConfirm: () => void;
+  title?: string;
+  description?: string;
+  confirmText?: string;
 }
 
 export function ShuffleWarningDialog({
   open,
   onOpenChange,
   onConfirm,
-  title = "Re-shuffle Tables?",
+  title = "Re-shuffle Restaurants?",
   description = "This action will completely reassign all attendees to different restaurants. All current table assignments will be lost and cannot be recovered.\n\nAre you sure you want to proceed with re-shuffling?",
-  confirmText = "Yes, Re-shuffle Tables"
+  confirmText = "Yes, Re-shuffle Restaurants",
 }: ShuffleWarningDialogProps) {
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
@@ -53,5 +52,5 @@ export function ShuffleWarningDialog({
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
-  )
+  );
 }

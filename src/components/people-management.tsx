@@ -428,11 +428,34 @@ export function PeopleManagement() {
         return;
       }
 
-      await bulkImportParticipants.mutateAsync(payload);
-      toast({
-        title: "Participants imported",
-        description: `${payload.length} participants processed successfully.`,
-      });
+      const result = await bulkImportParticipants.mutateAsync(payload);
+
+      if (result.failed === 0) {
+        toast({
+          title: "Import successful",
+          description: `${result.succeeded} participant${result.succeeded === 1 ? "" : "s"} imported successfully.`,
+        });
+      } else if (result.succeeded === 0) {
+        toast({
+          title: "Import failed",
+          description: `All ${result.failed} participant${result.failed === 1 ? "" : "s"} failed to import. ${result.errors[0]?.reason || ""}`,
+          variant: "destructive",
+        });
+      } else {
+        const duplicateCount = result.errors.filter(e =>
+          e.reason.includes("duplicate key") || e.reason.includes("already exists")
+        ).length;
+        const duplicateEmails = result.errors
+          .filter(e => e.reason.includes("duplicate key") || e.reason.includes("already exists"))
+          .slice(0, 3)
+          .map(e => e.email);
+
+        toast({
+          title: "Partial import",
+          description: `${result.succeeded} imported, ${result.failed} skipped (${duplicateCount} duplicate${duplicateCount === 1 ? "" : "s"}: ${duplicateEmails.join(", ")}${duplicateCount > 3 ? "..." : ""})`,
+          variant: "default",
+        });
+      }
     } catch (error) {
       console.error(error);
       toast({
