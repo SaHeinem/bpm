@@ -27,6 +27,9 @@ create table restaurants (
   public_transport_lines text,
   max_seats integer not null check (max_seats > 0),
   assigned_captain_id uuid references participants (id) on delete set null,
+  reservation_channel text,
+  reservation_name text,
+  reservation_confirmed timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );

@@ -9,6 +9,9 @@ export interface Restaurant {
   public_transport_lines: string | null
   max_seats: number
   assigned_captain_id: string | null
+  reservation_channel: string | null
+  reservation_name: string | null
+  reservation_confirmed: string | null
   created_at: string
   updated_at: string
 }

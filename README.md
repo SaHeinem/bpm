@@ -68,7 +68,7 @@ After `supabase start` you can capture outgoing Supabase Auth emails with [Mailp
 
    ```bash
    docker run -d --name supabase-mailpit \
-     --network supabase_default \
+     --network supabase_network_local \
      -p 1025:1025 -p 8025:8025 \
      axllent/mailpit:latest
    ```
@@ -90,8 +90,8 @@ After `supabase start` you can capture outgoing Supabase Auth emails with [Mailp
 
 ## Scripts
 
-| Command        | Description                        |
-| -------------- | ---------------------------------- |
+| Command        | Description                         |
+| -------------- | ----------------------------------- |
 | `pnpm dev`     | Start Vite dev server (HMR enabled) |
 | `pnpm build`   | Type-check + build for production   |
 | `pnpm preview` | Preview production build            |
@@ -99,13 +99,13 @@ After `supabase start` you can capture outgoing Supabase Auth emails with [Mailp
 
 ## Data Model
 
-| Table            | Purpose                                                                                   |
-| ---------------- | ----------------------------------------------------------------------------------------- |
-| `restaurants`    | Event venues. Tracks address, transport info, capacity, and assigned captain.             |
-| `participants`   | Pretix attendees. Includes captain flag, contact preferences, and status enum.            |
-| `assignments`    | Participant-to-restaurant mapping. Unique per participant and includes `assigned_at`.     |
+| Table            | Purpose                                                                                           |
+| ---------------- | ------------------------------------------------------------------------------------------------- |
+| `restaurants`    | Event venues. Tracks address, transport info, capacity, and assigned captain.                     |
+| `participants`   | Pretix attendees. Includes captain flag, contact preferences, and status enum.                    |
+| `assignments`    | Participant-to-restaurant mapping. Unique per participant and includes `assigned_at`.             |
 | `event_status`   | Single-row workflow tracker (`setup`, `captains_assigned`, `participants_assigned`, `finalized`). |
-| `event_activity` | Append-only audit trail for automation steps and manual adjustments.                      |
+| `event_activity` | Append-only audit trail for automation steps and manual adjustments.                              |
 
 ## Assignment Workflow
 

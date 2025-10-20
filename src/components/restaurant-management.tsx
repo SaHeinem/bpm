@@ -112,6 +112,18 @@ const restaurantSchema = z
       .preprocess(toOptionalString, z.string().nullable())
       .optional()
       .default(null),
+    reservation_channel: z
+      .preprocess(toOptionalString, z.string().nullable())
+      .optional()
+      .default(null),
+    reservation_name: z
+      .preprocess(toOptionalString, z.string().nullable())
+      .optional()
+      .default(null),
+    reservation_confirmed: z
+      .preprocess(toOptionalString, z.string().nullable())
+      .optional()
+      .default(null),
   })
   .transform((value) => ({
     ...value,
@@ -119,6 +131,9 @@ const restaurantSchema = z
     public_transport_time: value.public_transport_time ?? null,
     public_transport_lines: value.public_transport_lines ?? null,
     assigned_captain_id: value.assigned_captain_id ?? null,
+    reservation_channel: value.reservation_channel ?? null,
+    reservation_name: value.reservation_name ?? null,
+    reservation_confirmed: value.reservation_confirmed ?? null,
   }));
 
 type RestaurantFormValues = z.output<typeof restaurantSchema>;
@@ -146,6 +161,9 @@ const initialFormValues: RestaurantFormValues = {
   public_transport_time: null,
   public_transport_lines: null,
   assigned_captain_id: null,
+  reservation_channel: null,
+  reservation_name: null,
+  reservation_confirmed: null,
 };
 
 const OCCUPANCY_EPSILON = 0.001;
@@ -167,6 +185,18 @@ const formatMinutes = (value: number | null) => {
     return "—";
   }
   return `${value} min`;
+};
+
+const formatDateTime = (value: string | null) => {
+  if (!value) {
+    return "—";
+  }
+  try {
+    const date = new Date(value);
+    return date.toLocaleString();
+  } catch {
+    return "—";
+  }
 };
 
 export function RestaurantManagement() {
@@ -276,6 +306,9 @@ export function RestaurantManagement() {
           public_transport_time: restaurant.public_transport_time,
           public_transport_lines: restaurant.public_transport_lines ?? null,
           assigned_captain_id: restaurant.assigned_captain_id ?? null,
+          reservation_channel: restaurant.reservation_channel ?? null,
+          reservation_name: restaurant.reservation_name ?? null,
+          reservation_confirmed: restaurant.reservation_confirmed ?? null,
         });
       }
     } else {
@@ -299,6 +332,9 @@ export function RestaurantManagement() {
           public_transport_time: values.public_transport_time ?? null,
           public_transport_lines: values.public_transport_lines ?? null,
           assigned_captain_id: values.assigned_captain_id ?? null,
+          reservation_channel: values.reservation_channel ?? null,
+          reservation_name: values.reservation_name ?? null,
+          reservation_confirmed: values.reservation_confirmed ?? null,
         });
         toast({
           title: "Restaurant added",
@@ -315,6 +351,9 @@ export function RestaurantManagement() {
             public_transport_time: values.public_transport_time ?? null,
             public_transport_lines: values.public_transport_lines ?? null,
             assigned_captain_id: values.assigned_captain_id ?? null,
+            reservation_channel: values.reservation_channel ?? null,
+            reservation_name: values.reservation_name ?? null,
+            reservation_confirmed: values.reservation_confirmed ?? null,
           },
         });
         toast({
@@ -550,6 +589,7 @@ export function RestaurantManagement() {
                   <TableHead>Address</TableHead>
                   <TableHead className="text-center">Occupancy</TableHead>
                   <TableHead>Captain</TableHead>
+                  <TableHead>Reservation</TableHead>
                   <TableHead>Transport</TableHead>
                   <TableHead className="w-[80px] text-right">Actions</TableHead>
                 </TableRow>
@@ -599,6 +639,27 @@ export function RestaurantManagement() {
                         ) : (
                           <span className="text-xs text-muted-foreground">
                             Unassigned
+                          </span>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        {restaurant.reservation_channel || restaurant.reservation_name || restaurant.reservation_confirmed ? (
+                          <div className="flex flex-col gap-1 text-xs text-muted-foreground">
+                            {restaurant.reservation_name && (
+                              <span className="text-sm text-foreground">
+                                {restaurant.reservation_name}
+                              </span>
+                            )}
+                            {restaurant.reservation_channel && (
+                              <span>via {restaurant.reservation_channel}</span>
+                            )}
+                            {restaurant.reservation_confirmed && (
+                              <span>Confirmed: {formatDateTime(restaurant.reservation_confirmed)}</span>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">
+                            No reservation
                           </span>
                         )}
                       </TableCell>
@@ -827,6 +888,63 @@ export function RestaurantManagement() {
                       <FormControl>
                         <Input
                           placeholder="U8, Tram 1"
+                          value={field.value ?? ""}
+                          onChange={(event) =>
+                            field.onChange(event.target.value || null)
+                          }
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="reservation_channel"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Reservation channel</FormLabel>
+                      <FormControl>
+                        <Input
+                          placeholder="phone, email, website..."
+                          value={field.value ?? ""}
+                          onChange={(event) =>
+                            field.onChange(event.target.value || null)
+                          }
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="reservation_name"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Reservation name</FormLabel>
+                      <FormControl>
+                        <Input
+                          placeholder="Name under which reservation was made"
+                          value={field.value ?? ""}
+                          onChange={(event) =>
+                            field.onChange(event.target.value || null)
+                          }
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="reservation_confirmed"
+                  render={({ field }) => (
+                    <FormItem className="md:col-span-2">
+                      <FormLabel>Reservation confirmed</FormLabel>
+                      <FormControl>
+                        <Input
+                          type="datetime-local"
                           value={field.value ?? ""}
                           onChange={(event) =>
                             field.onChange(event.target.value || null)

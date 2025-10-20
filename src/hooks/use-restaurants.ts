@@ -11,6 +11,9 @@ export interface RestaurantPayload {
   public_transport_time?: number | null
   public_transport_lines?: string | null
   assigned_captain_id?: string | null
+  reservation_channel?: string | null
+  reservation_name?: string | null
+  reservation_confirmed?: string | null
 }
 
 async function fetchRestaurants(): Promise<Restaurant[]> {
