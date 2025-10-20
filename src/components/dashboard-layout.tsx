@@ -1,5 +1,5 @@
 import type React from "react";
-import { Link, useRouterState } from "@tanstack/react-router";
+import { Link, useRouterState, useNavigate } from "@tanstack/react-router";
 import { cn } from "@/lib/utils";
 import {
   LayoutDashboard,
@@ -10,10 +10,13 @@ import {
   Menu,
   X,
   Mail,
+  LogOut,
 } from "lucide-react";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useAuth } from "@/hooks/use-auth";
+import { Spinner } from "@/components/ui/spinner";
 
 type NavigationItem = {
   name: string;
@@ -38,7 +41,36 @@ const navigation: NavigationItem[] = [
 export function DashboardLayout({ children }: { children: React.ReactNode }) {
   const router = useRouterState();
   const pathname = router.location.pathname;
+  const navigate = useNavigate();
+  const { user, loading, signOut } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  useEffect(() => {
+    if (!loading && !user) {
+      navigate({ to: "/login" });
+    }
+  }, [user, loading, navigate]);
+
+  const handleSignOut = async () => {
+    try {
+      await signOut();
+      navigate({ to: "/login" });
+    } catch (error) {
+      console.error("Error signing out:", error);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex h-screen items-center justify-center">
+        <Spinner className="h-8 w-8" />
+      </div>
+    );
+  }
+
+  if (!user) {
+    return null;
+  }
 
   return (
     <div className="min-h-screen bg-background">
@@ -71,7 +103,20 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
               </h1>
             </div>
           </div>
-          <ThemeToggle />
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-muted-foreground hidden sm:inline">
+              {user.email}
+            </span>
+            <ThemeToggle />
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={handleSignOut}
+              title="Sign out"
+            >
+              <LogOut className="h-4 w-4" />
+            </Button>
+          </div>
         </div>
       </header>
 

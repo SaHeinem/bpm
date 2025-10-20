@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as RestaurantsRouteImport } from './routes/restaurants'
 import { Route as PeopleRouteImport } from './routes/people'
+import { Route as LoginRouteImport } from './routes/login'
 import { Route as EmailsRouteImport } from './routes/emails'
 import { Route as AssignmentsRouteImport } from './routes/assignments'
 import { Route as ActivityRouteImport } from './routes/activity'
@@ -24,6 +25,11 @@ const RestaurantsRoute = RestaurantsRouteImport.update({
 const PeopleRoute = PeopleRouteImport.update({
   id: '/people',
   path: '/people',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LoginRoute = LoginRouteImport.update({
+  id: '/login',
+  path: '/login',
   getParentRoute: () => rootRouteImport,
 } as any)
 const EmailsRoute = EmailsRouteImport.update({
@@ -52,6 +58,7 @@ export interface FileRoutesByFullPath {
   '/activity': typeof ActivityRoute
   '/assignments': typeof AssignmentsRoute
   '/emails': typeof EmailsRoute
+  '/login': typeof LoginRoute
   '/people': typeof PeopleRoute
   '/restaurants': typeof RestaurantsRoute
 }
@@ -60,6 +67,7 @@ export interface FileRoutesByTo {
   '/activity': typeof ActivityRoute
   '/assignments': typeof AssignmentsRoute
   '/emails': typeof EmailsRoute
+  '/login': typeof LoginRoute
   '/people': typeof PeopleRoute
   '/restaurants': typeof RestaurantsRoute
 }
@@ -69,6 +77,7 @@ export interface FileRoutesById {
   '/activity': typeof ActivityRoute
   '/assignments': typeof AssignmentsRoute
   '/emails': typeof EmailsRoute
+  '/login': typeof LoginRoute
   '/people': typeof PeopleRoute
   '/restaurants': typeof RestaurantsRoute
 }
@@ -79,6 +88,7 @@ export interface FileRouteTypes {
     | '/activity'
     | '/assignments'
     | '/emails'
+    | '/login'
     | '/people'
     | '/restaurants'
   fileRoutesByTo: FileRoutesByTo
@@ -87,6 +97,7 @@ export interface FileRouteTypes {
     | '/activity'
     | '/assignments'
     | '/emails'
+    | '/login'
     | '/people'
     | '/restaurants'
   id:
@@ -95,6 +106,7 @@ export interface FileRouteTypes {
     | '/activity'
     | '/assignments'
     | '/emails'
+    | '/login'
     | '/people'
     | '/restaurants'
   fileRoutesById: FileRoutesById
@@ -104,6 +116,7 @@ export interface RootRouteChildren {
   ActivityRoute: typeof ActivityRoute
   AssignmentsRoute: typeof AssignmentsRoute
   EmailsRoute: typeof EmailsRoute
+  LoginRoute: typeof LoginRoute
   PeopleRoute: typeof PeopleRoute
   RestaurantsRoute: typeof RestaurantsRoute
 }
@@ -122,6 +135,13 @@ declare module '@tanstack/react-router' {
       path: '/people'
       fullPath: '/people'
       preLoaderRoute: typeof PeopleRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/emails': {
@@ -160,6 +180,7 @@ const rootRouteChildren: RootRouteChildren = {
   ActivityRoute: ActivityRoute,
   AssignmentsRoute: AssignmentsRoute,
   EmailsRoute: EmailsRoute,
+  LoginRoute: LoginRoute,
   PeopleRoute: PeopleRoute,
   RestaurantsRoute: RestaurantsRoute,
 }
