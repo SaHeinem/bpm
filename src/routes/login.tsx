@@ -17,7 +17,7 @@ export const Route = createFileRoute("/login")({
 });
 
 function LoginPage() {
-  const { user, loading, signInWithGoogle } = useAuth();
+  const { user, loading, signInWithGoogle, authError } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
 
@@ -62,6 +62,7 @@ function LoginPage() {
             onClick={handleGoogleSignIn}
             className="w-full"
             size="lg"
+            disabled={loading}
           >
             <svg
               className="mr-2 h-5 w-5"
@@ -87,6 +88,11 @@ function LoginPage() {
             </svg>
             Continue with Google
           </Button>
+          {authError ? (
+            <p className="mt-4 text-sm text-destructive">
+              {authError.message}
+            </p>
+          ) : null}
         </CardContent>
       </Card>
     </div>

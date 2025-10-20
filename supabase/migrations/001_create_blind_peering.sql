@@ -1,4 +1,5 @@
 create extension if not exists "uuid-ossp";
+create extension if not exists citext;
 
 create type participant_status as enum ('registered', 'cancelled', 'late_joiner');
 create type workflow_state as enum ('setup', 'captains_assigned', 'participants_assigned', 'finalized');
@@ -98,3 +99,38 @@ create table email_logs (
 
 create index email_logs_participant_idx on email_logs (participant_id);
 create index email_logs_sent_at_idx on email_logs (sent_at desc);
+
+create table auth_whitelist (
+  id uuid primary key default uuid_generate_v4(),
+  email text not null,
+  note text,
+  created_at timestamptz not null default now()
+);
+
+create unique index auth_whitelist_email_unique on auth_whitelist (lower(email));
+
+alter table auth_whitelist enable row level security;
+
+create policy "Allow authenticated read whitelist"
+on auth_whitelist
+for select
+to authenticated
+using (true);
+
+create policy "Allow service role manage whitelist"
+on auth_whitelist
+for all
+to service_role
+using (true)
+with check (true);
+
+create or replace function delete_current_user()
+returns void
+language sql
+security definer
+set search_path = auth, public
+as $$
+  delete from auth.users where id = auth.uid();
+$$;
+
+grant execute on function delete_current_user() to authenticated;
