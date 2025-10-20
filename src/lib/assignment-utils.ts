@@ -75,14 +75,36 @@ export function planParticipantAssignments(
       continue
     }
 
+    // Sort pools prioritizing:
+    // 1. Restaurants with free capacity (assigned < capacity) come first
+    // 2. Among those with free capacity, prefer ones with fewer assigned
+    // 3. For overbooking (assigned >= capacity), prefer ones with fewer assigned (fair distribution)
+    // 4. Break ties by capacity (larger restaurants for fair distribution)
     const sortedPools = [...pools].sort((a, b) => {
-      if (a.assigned === b.assigned) {
-        return b.capacity - a.capacity
+      const aHasSpace = a.assigned < a.capacity
+      const bHasSpace = b.assigned < b.capacity
+
+      // Prioritize restaurants with free space over full ones
+      if (aHasSpace !== bHasSpace) {
+        return aHasSpace ? -1 : 1
       }
-      return a.assigned - b.assigned
+
+      // If both have space or both are full, prefer fewer assigned (fair distribution)
+      if (a.assigned !== b.assigned) {
+        return a.assigned - b.assigned
+      }
+
+      // Break ties by capacity (larger restaurants)
+      return b.capacity - a.capacity
     })
 
-    const target = sortedPools.find((pool) => pool.capacity > 0 && pool.assigned < pool.capacity)
+    // First try to find a restaurant with free capacity
+    let target = sortedPools.find((pool) => pool.capacity > 0 && pool.assigned < pool.capacity)
+
+    // If no free capacity, assign to the restaurant with the least overbooking
+    if (!target && sortedPools.length > 0 && sortedPools[0].capacity > 0) {
+      target = sortedPools[0]
+    }
 
     if (!target) {
       unassigned.push(participant)

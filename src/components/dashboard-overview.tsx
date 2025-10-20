@@ -1,6 +1,13 @@
 import { useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { Shuffle, Users, AlertTriangle, Mail, Lock, UserPlus } from "lucide-react";
+import {
+  Shuffle,
+  Users,
+  AlertTriangle,
+  Mail,
+  Lock,
+  UserPlus,
+} from "lucide-react";
 
 import { useParticipants } from "@/hooks/use-participants";
 import { useRestaurants } from "@/hooks/use-restaurants";
@@ -328,14 +335,7 @@ export function DashboardOverview() {
       });
       return;
     }
-    if (capacityShortfall) {
-      toast({
-        title: "Capacity exceeded",
-        description: "Reduce participants or add restaurants before shuffling.",
-        variant: "destructive",
-      });
-      return;
-    }
+    // Allow overbooking - the assignment algorithm will distribute fairly
     // Only show warning dialog if there are existing assignments
     if (assignments.length > 0) {
       setShowReassignDialog(true);
@@ -463,7 +463,7 @@ export function DashboardOverview() {
     const emails = rosters.flatMap((roster) => {
       const tableGuests = roster.participants;
       const allParticipants = [...tableGuests, roster.captain].filter(
-        (p): p is typeof participants[0] => Boolean(p)
+        (p): p is (typeof participants)[0] => Boolean(p)
       );
 
       return allParticipants.map((participant) => ({
@@ -489,7 +489,10 @@ export function DashboardOverview() {
       await sendBulkEmailsMutation.mutateAsync({ emails, emailType });
       await activityLogger.mutateAsync({
         event_type: "email",
-        description: `Sent ${emailType.replace("_", " ")} emails to all participants`,
+        description: `Sent ${emailType.replace(
+          "_",
+          " "
+        )} emails to all participants`,
         actor: null,
         metadata: { emailCount: emails.length, emailType },
       });
@@ -501,7 +504,8 @@ export function DashboardOverview() {
       console.error(error);
       toast({
         title: "Failed to send emails",
-        description: error instanceof Error ? error.message : "Please try again.",
+        description:
+          error instanceof Error ? error.message : "Please try again.",
         variant: "destructive",
       });
     } finally {
@@ -649,7 +653,7 @@ export function DashboardOverview() {
               <p>
                 There are {nonCaptainParticipants.length} assignable
                 participants but only {nonCaptainCapacity} seats for attendees.
-                Add more restaurants or reduce registrations.
+                Overbooking will be distributed fairly across restaurants.
               </p>
             )}
             {captainShortfall && (
@@ -697,15 +701,10 @@ export function DashboardOverview() {
               className="w-full justify-start gap-2 bg-transparent"
               onClick={handleAssignParticipants}
               disabled={
-                isAssigningParticipants ||
-                isFinalized ||
-                capacityShortfall ||
-                captainShortfall
+                isAssigningParticipants || isFinalized || captainShortfall
               }
               title={
-                capacityShortfall
-                  ? "Total capacity is too low for attendees."
-                  : captainShortfall
+                captainShortfall
                   ? "Assign captains before shuffling participants."
                   : isFinalized
                   ? "Assignments are locked."
@@ -745,16 +744,15 @@ export function DashboardOverview() {
               variant="outline"
               className="w-full justify-start gap-2 bg-transparent"
               onClick={() => handleSendBulkEmails("initial_assignment")}
-              disabled={
-                sendBulkEmailsMutation.isPending || !assignments.length
-              }
+              disabled={sendBulkEmailsMutation.isPending || !assignments.length}
               title={
                 !assignments.length
                   ? "Assign participants before sending emails."
                   : undefined
               }
             >
-              {sendBulkEmailsMutation.isPending && pendingEmailType === "initial_assignment" ? (
+              {sendBulkEmailsMutation.isPending &&
+              pendingEmailType === "initial_assignment" ? (
                 <Spinner className="h-4 w-4" />
               ) : (
                 <Mail className="h-4 w-4" />
@@ -765,16 +763,15 @@ export function DashboardOverview() {
               variant="outline"
               className="w-full justify-start gap-2 bg-transparent"
               onClick={() => handleSendBulkEmails("final_assignment")}
-              disabled={
-                sendBulkEmailsMutation.isPending || !assignments.length
-              }
+              disabled={sendBulkEmailsMutation.isPending || !assignments.length}
               title={
                 !assignments.length
                   ? "Assign participants before sending emails."
                   : undefined
               }
             >
-              {sendBulkEmailsMutation.isPending && pendingEmailType === "final_assignment" ? (
+              {sendBulkEmailsMutation.isPending &&
+              pendingEmailType === "final_assignment" ? (
                 <Spinner className="h-4 w-4" />
               ) : (
                 <Mail className="h-4 w-4" />
