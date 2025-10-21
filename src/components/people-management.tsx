@@ -66,6 +66,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Spinner } from "@/components/ui/spinner";
+import { ParticipantCommentsModal } from "@/components/participant-comments-modal";
 
 const participantSchema = z.object({
   pretix_id: z.string().min(1, "Pretix ID is required"),
@@ -755,6 +756,10 @@ export function PeopleManagement() {
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end gap-2">
+                          <ParticipantCommentsModal
+                            participantId={participant.id}
+                            participantName={participant.attendee_name}
+                          />
                           {participant.status === "cancelled" ? (
                             <Button
                               variant="ghost"

@@ -65,6 +65,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Spinner } from "@/components/ui/spinner";
+import { RestaurantCommentsModal } from "@/components/restaurant-comments-modal";
 
 const toOptionalNumber = (value: unknown) => {
   if (value === "" || value === null || value === undefined) {
@@ -681,6 +682,10 @@ export function RestaurantManagement() {
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end gap-2">
+                          <RestaurantCommentsModal
+                            restaurantId={restaurant.id}
+                            restaurantName={restaurant.name}
+                          />
                           <Button
                             variant="ghost"
                             size="icon"

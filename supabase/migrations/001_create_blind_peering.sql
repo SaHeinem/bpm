@@ -134,3 +134,46 @@ as $$
 $$;
 
 grant execute on function delete_current_user() to authenticated;
+
+create table restaurant_comments (
+  id uuid primary key default uuid_generate_v4(),
+  restaurant_id uuid not null references restaurants (id) on delete cascade,
+  comment_text text not null,
+  created_by uuid references auth.users (id) on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index restaurant_comments_restaurant_idx on restaurant_comments (restaurant_id);
+create index restaurant_comments_created_at_idx on restaurant_comments (created_at desc);
+
+create trigger trg_restaurant_comments_updated_at
+before update on restaurant_comments
+for each row execute function set_updated_at();
+
+create table participant_comments (
+  id uuid primary key default uuid_generate_v4(),
+  participant_id uuid not null references participants (id) on delete cascade,
+  comment_text text not null,
+  created_by uuid references auth.users (id) on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index participant_comments_participant_idx on participant_comments (participant_id);
+create index participant_comments_created_at_idx on participant_comments (created_at desc);
+
+create trigger trg_participant_comments_updated_at
+before update on participant_comments
+for each row execute function set_updated_at();
+
+create or replace function get_user_email(user_id uuid)
+returns text
+language sql
+security definer
+set search_path = auth, public
+as $$
+  select email from auth.users where id = user_id;
+$$;
+
+grant execute on function get_user_email(uuid) to authenticated;

@@ -79,3 +79,23 @@ export interface EmailLog {
   metadata: Record<string, unknown>
   created_at: string
 }
+
+export interface RestaurantComment {
+  id: string
+  restaurant_id: string
+  comment_text: string
+  created_by: string | null
+  created_at: string
+  updated_at: string
+  created_by_email?: string | null
+}
+
+export interface ParticipantComment {
+  id: string
+  participant_id: string
+  comment_text: string
+  created_by: string | null
+  created_at: string
+  updated_at: string
+  created_by_email?: string | null
+}
