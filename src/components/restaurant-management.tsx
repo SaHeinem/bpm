@@ -594,17 +594,15 @@ export function RestaurantManagement() {
               <Spinner className="h-6 w-6" />
             </div>
           ) : (
-            <Table>
+            <div className="overflow-x-auto">
+              <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>Name</TableHead>
-                  <TableHead>Address</TableHead>
-                  <TableHead>Phone</TableHead>
+                  <TableHead className="hidden lg:table-cell">Phone</TableHead>
                   <TableHead className="text-center">Occupancy</TableHead>
-                  <TableHead>Captain</TableHead>
-                  <TableHead>Reservation</TableHead>
-                  <TableHead>Transport</TableHead>
-                  <TableHead className="w-[80px] text-right">Actions</TableHead>
+                  <TableHead className="hidden xl:table-cell">Captain</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -617,20 +615,33 @@ export function RestaurantManagement() {
                   return (
                     <TableRow key={restaurant.id}>
                       <TableCell>
-                        <div className="font-medium text-foreground">
-                          {restaurant.name}
+                        <div className="flex flex-col gap-1">
+                          <div className="font-medium text-foreground">
+                            {restaurant.name}
+                          </div>
+                          <div className="text-xs text-muted-foreground">
+                            {restaurant.address}
+                          </div>
+                          {restaurant.phone && (
+                            <a
+                              href={`tel:${restaurant.phone}`}
+                              className="text-xs text-primary hover:underline lg:hidden"
+                            >
+                              {restaurant.phone}
+                            </a>
+                          )}
+                          {captain && (
+                            <div className="text-xs text-muted-foreground xl:hidden">
+                              Captain: {captain.attendee_name}
+                            </div>
+                          )}
                         </div>
                       </TableCell>
-                      <TableCell>
-                        <p className="text-sm text-muted-foreground">
-                          {restaurant.address}
-                        </p>
-                      </TableCell>
-                      <TableCell>
+                      <TableCell className="hidden lg:table-cell">
                         {restaurant.phone ? (
                           <a
                             href={`tel:${restaurant.phone}`}
-                            className="text-sm text-primary hover:underline"
+                            className="text-sm text-primary hover:underline whitespace-nowrap"
                           >
                             {restaurant.phone}
                           </a>
@@ -651,7 +662,7 @@ export function RestaurantManagement() {
                           {occupancy}/{restaurant.max_seats}
                         </Badge>
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="hidden xl:table-cell">
                         {captain ? (
                           <div className="flex flex-col">
                             <span className="text-sm text-foreground">
@@ -666,43 +677,6 @@ export function RestaurantManagement() {
                             Unassigned
                           </span>
                         )}
-                      </TableCell>
-                      <TableCell>
-                        {restaurant.reservation_channel || restaurant.reservation_name || restaurant.reservation_confirmed ? (
-                          <div className="flex flex-col gap-1 text-xs text-muted-foreground">
-                            {restaurant.reservation_name && (
-                              <span className="text-sm text-foreground">
-                                {restaurant.reservation_name}
-                              </span>
-                            )}
-                            {restaurant.reservation_channel && (
-                              <span>via {restaurant.reservation_channel}</span>
-                            )}
-                            {restaurant.reservation_confirmed && (
-                              <span>Confirmed: {formatDateTime(restaurant.reservation_confirmed)}</span>
-                            )}
-                          </div>
-                        ) : (
-                          <span className="text-xs text-muted-foreground">
-                            No reservation
-                          </span>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex flex-col gap-1 text-xs text-muted-foreground">
-                          <span>
-                            Taxi: {formatMinutes(restaurant.taxi_time)}
-                          </span>
-                          <span>
-                            Transit:{" "}
-                            {formatMinutes(restaurant.public_transport_time)}
-                          </span>
-                          {restaurant.public_transport_lines && (
-                            <span>
-                              Lines: {restaurant.public_transport_lines}
-                            </span>
-                          )}
-                        </div>
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end gap-2">
@@ -758,6 +732,7 @@ export function RestaurantManagement() {
                 })}
               </TableBody>
             </Table>
+            </div>
           )}
         </CardContent>
       </Card>
