@@ -140,11 +140,20 @@ export function RestaurantCommentsModal({
     }
   };
 
+  const commentCount = comments.length;
+
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button variant="ghost" size="icon" title="View comments">
+        <Button variant="ghost" size="icon" className="relative" title="View comments">
           <MessageSquare className="h-4 w-4" />
+          {commentCount > 0 && (
+            <Badge
+              className="absolute -top-1 -right-1 h-5 min-w-5 flex items-center justify-center p-0 px-1 text-xs bg-primary text-primary-foreground"
+            >
+              {commentCount}
+            </Badge>
+          )}
         </Button>
       </DialogTrigger>
       <DialogContent className="max-w-2xl max-h-[80vh] flex flex-col">
