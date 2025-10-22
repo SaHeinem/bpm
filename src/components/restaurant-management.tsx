@@ -89,6 +89,10 @@ const restaurantSchema = z
   .object({
     name: z.string().min(1, "Name is required"),
     address: z.string().min(1, "Address is required"),
+    phone: z
+      .preprocess(toOptionalString, z.string().nullable())
+      .optional()
+      .default(null),
     max_seats: z
       .preprocess(
         (value) => Number(value),
@@ -128,6 +132,7 @@ const restaurantSchema = z
   })
   .transform((value) => ({
     ...value,
+    phone: value.phone ?? null,
     taxi_time: value.taxi_time ?? null,
     public_transport_time: value.public_transport_time ?? null,
     public_transport_lines: value.public_transport_lines ?? null,
@@ -148,6 +153,7 @@ interface RestaurantDialogState {
 type RestaurantCsvRow = {
   name?: string;
   address?: string;
+  phone?: string;
   max_seats?: string | number;
   taxi_time?: string | number;
   public_transport_time?: string | number;
@@ -157,6 +163,7 @@ type RestaurantCsvRow = {
 const initialFormValues: RestaurantFormValues = {
   name: "",
   address: "",
+  phone: null,
   max_seats: 1,
   taxi_time: null,
   public_transport_time: null,
@@ -302,6 +309,7 @@ export function RestaurantManagement() {
         form.reset({
           name: restaurant.name,
           address: restaurant.address,
+          phone: restaurant.phone ?? null,
           max_seats: restaurant.max_seats,
           taxi_time: restaurant.taxi_time,
           public_transport_time: restaurant.public_transport_time,
@@ -328,6 +336,7 @@ export function RestaurantManagement() {
         await createRestaurant.mutateAsync({
           name: values.name,
           address: values.address,
+          phone: values.phone ?? null,
           max_seats: values.max_seats,
           taxi_time: values.taxi_time ?? null,
           public_transport_time: values.public_transport_time ?? null,
@@ -347,6 +356,7 @@ export function RestaurantManagement() {
           payload: {
             name: values.name,
             address: values.address,
+            phone: values.phone ?? null,
             max_seats: values.max_seats,
             taxi_time: values.taxi_time ?? null,
             public_transport_time: values.public_transport_time ?? null,
@@ -429,6 +439,7 @@ export function RestaurantManagement() {
         .map((row) => ({
           name: String(row.name),
           address: String(row.address),
+          phone: row.phone ? String(row.phone) : null,
           max_seats:
             typeof row.max_seats === "number"
               ? row.max_seats
@@ -588,6 +599,7 @@ export function RestaurantManagement() {
                 <TableRow>
                   <TableHead>Name</TableHead>
                   <TableHead>Address</TableHead>
+                  <TableHead>Phone</TableHead>
                   <TableHead className="text-center">Occupancy</TableHead>
                   <TableHead>Captain</TableHead>
                   <TableHead>Reservation</TableHead>
@@ -613,6 +625,18 @@ export function RestaurantManagement() {
                         <p className="text-sm text-muted-foreground">
                           {restaurant.address}
                         </p>
+                      </TableCell>
+                      <TableCell>
+                        {restaurant.phone ? (
+                          <a
+                            href={`tel:${restaurant.phone}`}
+                            className="text-sm text-primary hover:underline"
+                          >
+                            {restaurant.phone}
+                          </a>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        )}
                       </TableCell>
                       <TableCell className="text-center">
                         <Badge
@@ -787,6 +811,26 @@ export function RestaurantManagement() {
                           placeholder="123 Main St, City"
                           rows={2}
                           {...field}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="phone"
+                  render={({ field }) => (
+                    <FormItem className="md:col-span-2">
+                      <FormLabel>Phone</FormLabel>
+                      <FormControl>
+                        <Input
+                          type="tel"
+                          placeholder="+1 234 567 8900"
+                          value={field.value ?? ""}
+                          onChange={(event) =>
+                            field.onChange(event.target.value || null)
+                          }
                         />
                       </FormControl>
                       <FormMessage />

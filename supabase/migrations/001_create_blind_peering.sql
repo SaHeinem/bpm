@@ -23,6 +23,7 @@ create table restaurants (
   id uuid primary key default uuid_generate_v4(),
   name text not null,
   address text not null,
+  phone text,
   taxi_time integer check (taxi_time is null or taxi_time >= 0),
   public_transport_time integer check (public_transport_time is null or public_transport_time >= 0),
   public_transport_lines text,

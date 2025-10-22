@@ -4,6 +4,7 @@ export interface Restaurant {
   id: string
   name: string
   address: string
+  phone: string | null
   taxi_time: number | null
   public_transport_time: number | null
   public_transport_lines: string | null

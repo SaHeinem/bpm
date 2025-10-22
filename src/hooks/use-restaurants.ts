@@ -6,6 +6,7 @@ import type { Restaurant } from "@/types/database"
 export interface RestaurantPayload {
   name: string
   address: string
+  phone?: string | null
   max_seats: number
   taxi_time?: number | null
   public_transport_time?: number | null
