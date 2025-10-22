@@ -4,7 +4,6 @@ import { queryKeys } from "@/lib/query-keys"
 import type { Participant } from "@/types/database"
 
 export interface ParticipantPayload {
-  pretix_id: string
   given_name: string
   family_name: string
   attendee_name: string
@@ -71,7 +70,7 @@ async function bulkUpsertParticipants(payload: ParticipantPayload[]): Promise<Bu
         ...participant,
       },
       {
-        onConflict: "pretix_id",
+        onConflict: "attendee_email",
         ignoreDuplicates: false,
       },
     )

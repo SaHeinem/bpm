@@ -69,7 +69,6 @@ import { Spinner } from "@/components/ui/spinner";
 import { ParticipantCommentsModal } from "@/components/participant-comments-modal";
 
 const participantSchema = z.object({
-  pretix_id: z.string().min(1, "Pretix ID is required"),
   given_name: z.string().min(1, "Given name is required"),
   family_name: z.string().min(1, "Family name is required"),
   attendee_name: z.string().min(1, "Attendee display name is required"),
@@ -93,7 +92,6 @@ interface ParticipantDialogState {
 }
 
 type ParticipantCsvRow = {
-  pretix_id?: string;
   given_name?: string;
   family_name?: string;
   attendee_name?: string;
@@ -105,7 +103,6 @@ type ParticipantCsvRow = {
 };
 
 const initialParticipantValues: ParticipantFormValues = {
-  pretix_id: "",
   given_name: "",
   family_name: "",
   attendee_name: "",
@@ -197,8 +194,7 @@ export function PeopleManagement() {
           .includes(searchTerm.toLowerCase()) ||
         participant.attendee_email
           .toLowerCase()
-          .includes(searchTerm.toLowerCase()) ||
-        participant.pretix_id.toLowerCase().includes(searchTerm.toLowerCase());
+          .includes(searchTerm.toLowerCase());
 
       const matchesStatus =
         statusFilter === "all" || participant.status === statusFilter;
@@ -237,7 +233,6 @@ export function PeopleManagement() {
       );
       if (participant) {
         form.reset({
-          pretix_id: participant.pretix_id,
           given_name: participant.given_name,
           family_name: participant.family_name,
           attendee_name: participant.attendee_name,
@@ -263,7 +258,6 @@ export function PeopleManagement() {
     try {
       if (dialogState.mode === "create") {
         await createParticipant.mutateAsync({
-          pretix_id: values.pretix_id,
           given_name: values.given_name,
           family_name: values.family_name,
           attendee_name: values.attendee_name,
@@ -283,7 +277,6 @@ export function PeopleManagement() {
         await editParticipant.mutateAsync({
           id: dialogState.participantId,
           payload: {
-            pretix_id: values.pretix_id,
             given_name: values.given_name,
             family_name: values.family_name,
             attendee_name: values.attendee_name,
@@ -413,9 +406,8 @@ export function PeopleManagement() {
       }
 
       const payload = parsed.data
-        .filter((row) => Boolean(row.pretix_id) && Boolean(row.attendee_email))
+        .filter((row) => Boolean(row.attendee_email))
         .map((row) => ({
-          pretix_id: String(row.pretix_id),
           given_name: row.given_name ? String(row.given_name) : "",
           family_name: row.family_name ? String(row.family_name) : "",
           attendee_name: row.attendee_name
@@ -448,11 +440,18 @@ export function PeopleManagement() {
       }
 
       const result = await bulkImportParticipants.mutateAsync(payload);
+      const totalRows = payload.length;
+      const uniqueParticipants = result.succeeded + result.failed;
 
       if (result.failed === 0) {
+        const duplicatesInCsv = totalRows - uniqueParticipants;
+        const message = duplicatesInCsv > 0
+          ? `${result.succeeded} participant${result.succeeded === 1 ? "" : "s"} processed from ${totalRows} CSV rows (${duplicatesInCsv} duplicate${duplicatesInCsv === 1 ? "" : "s"} in CSV).`
+          : `${result.succeeded} participant${result.succeeded === 1 ? "" : "s"} imported successfully.`;
+
         toast({
           title: "Import successful",
-          description: `${result.succeeded} participant${result.succeeded === 1 ? "" : "s"} imported successfully.`,
+          description: message,
         });
       } else if (result.succeeded === 0) {
         toast({
@@ -482,7 +481,7 @@ export function PeopleManagement() {
         description:
           error instanceof Error
             ? error.message
-            : "We could not parse that CSV. Please ensure it includes Pretix ID and Email columns.",
+            : "We could not parse that CSV. Please ensure it includes an Email column.",
         variant: "destructive",
       });
     } finally {
@@ -584,7 +583,7 @@ export function PeopleManagement() {
           <div className="flex flex-col gap-3 md:flex-row">
             <div className="relative md:max-w-xs">
               <Input
-                placeholder="Search by name, email, or Pretix ID…"
+                placeholder="Search by name or email…"
                 value={searchTerm}
                 onChange={(event) => setSearchTerm(event.target.value)}
                 className="pr-9"
@@ -654,7 +653,6 @@ export function PeopleManagement() {
                   <TableHead>Name</TableHead>
                   <TableHead>Email</TableHead>
                   <TableHead className="text-center">First Email</TableHead>
-                  <TableHead>Pretix ID</TableHead>
                   <TableHead>Captain</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Assigned Restaurant</TableHead>
@@ -705,11 +703,6 @@ export function PeopleManagement() {
                             <Mail className="h-4 w-4" />
                           </span>
                         )}
-                      </TableCell>
-                      <TableCell>
-                        <span className="text-xs text-muted-foreground">
-                          {participant.pretix_id}
-                        </span>
                       </TableCell>
                       <TableCell>
                         {participant.is_table_captain ? (
@@ -851,19 +844,6 @@ export function PeopleManagement() {
               onSubmit={form.handleSubmit(handleSubmit)}
             >
               <div className="grid gap-4 md:grid-cols-2">
-                <FormField
-                  control={form.control}
-                  name="pretix_id"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Pretix ID</FormLabel>
-                      <FormControl>
-                        <Input placeholder="ABC123" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
                 <FormField
                   control={form.control}
                   name="status"

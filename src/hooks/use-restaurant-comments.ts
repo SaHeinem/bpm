@@ -23,20 +23,14 @@ async function fetchRestaurantComments(restaurantId: string): Promise<Restaurant
   const comments = (data ?? []) as RestaurantComment[]
   const userIds = [...new Set(comments.map(c => c.created_by).filter(Boolean))]
 
-  console.log('Comments:', comments)
-  console.log('User IDs to fetch:', userIds)
-
   if (userIds.length > 0) {
     const emailPromises = userIds.map(async (userId) => {
-      const { data: email, error: emailError } = await supabase.rpc('get_user_email', { user_id: userId })
-      console.log('Email for user', userId, ':', email, emailError)
+      const { data: email } = await supabase.rpc('get_user_email', { user_id: userId })
       return { userId, email }
     })
 
     const emails = await Promise.all(emailPromises)
     const emailMap = new Map(emails.map(e => [e.userId, e.email]))
-
-    console.log('Email map:', emailMap)
 
     return comments.map(comment => ({
       ...comment,

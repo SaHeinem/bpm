@@ -6,7 +6,6 @@ create type workflow_state as enum ('setup', 'captains_assigned', 'participants_
 
 create table participants (
   id uuid primary key default uuid_generate_v4(),
-  pretix_id text not null unique,
   given_name text not null,
   family_name text not null,
   attendee_name text not null,
