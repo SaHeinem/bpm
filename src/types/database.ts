@@ -28,6 +28,7 @@ export interface Participant {
   captain_phone: string | null
   captain_preferred_contact: string | null
   status: "registered" | "cancelled" | "late_joiner"
+  manual_status_override: boolean
   created_at: string
   updated_at: string
 }

@@ -167,7 +167,7 @@ export function AssignmentsView() {
       return (
         participant.attendee_name.toLowerCase().includes(term) ||
         participant.attendee_email.toLowerCase().includes(term) ||
-        participant.pretix_id.toLowerCase().includes(term) ||
+        (participant.pretix_id && participant.pretix_id.toString().includes(term)) ||
         restaurantName.toLowerCase().includes(term)
       );
     });

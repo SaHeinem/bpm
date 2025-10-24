@@ -652,8 +652,9 @@ export function DashboardOverview() {
             {capacityShortfall && (
               <p>
                 There are {nonCaptainParticipants.length} assignable
-                participants but only {nonCaptainCapacity} seats for attendees.
-                Overbooking will be distributed fairly across restaurants.
+                participants but only {nonCaptainCapacity + restaurants.length}{" "}
+                seats for attendees. Overbooking will be distributed fairly
+                across restaurants.
               </p>
             )}
             {captainShortfall && (

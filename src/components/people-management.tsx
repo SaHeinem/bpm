@@ -334,11 +334,12 @@ export function PeopleManagement() {
     const newStatus = participant.status === "cancelled" ? "registered" : "cancelled";
 
     try {
-      // Update participant status
+      // Update participant status and mark as manually overridden
       await editParticipant.mutateAsync({
         id: participantId,
         payload: {
           status: newStatus,
+          manual_status_override: true,
         },
       });
 
@@ -512,7 +513,7 @@ export function PeopleManagement() {
   };
 
   return (
-    <div className="space-y-6 p-6">
+    <div className="space-y-6 p-4 sm:p-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="text-3xl font-bold tracking-tight text-foreground">
@@ -530,7 +531,8 @@ export function PeopleManagement() {
             disabled={syncFromPretix.isPending}
           >
             <RefreshCw className={cn("h-4 w-4", syncFromPretix.isPending && "animate-spin")} />
-            {syncFromPretix.isPending ? "Syncing..." : "Sync from Pretix"}
+            <span className="hidden sm:inline">{syncFromPretix.isPending ? "Syncing..." : "Sync from Pretix"}</span>
+            <span className="sm:hidden">Sync</span>
           </Button>
           <Button
             variant="outline"
@@ -538,11 +540,13 @@ export function PeopleManagement() {
             onClick={handleImportClick}
           >
             <UploadCloud className="h-4 w-4" />
-            Import CSV
+            <span className="hidden sm:inline">Import CSV</span>
+            <span className="sm:hidden">Import</span>
           </Button>
           <Button className="gap-2" onClick={() => openDialog("create")}>
             <Plus className="h-4 w-4" />
-            Add Participant
+            <span className="hidden sm:inline">Add Participant</span>
+            <span className="sm:hidden">Add</span>
           </Button>
           <input
             ref={fileInputRef}
@@ -554,7 +558,7 @@ export function PeopleManagement() {
         </div>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-4">
+      <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 md:grid-cols-4">
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium">
@@ -678,16 +682,19 @@ export function PeopleManagement() {
               No participants match the current filters.
             </p>
           ) : (
-            <Table>
+            <div className="w-full overflow-x-auto">
+              <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>Name</TableHead>
-                  <TableHead>Email</TableHead>
-                  <TableHead className="text-center">First Email</TableHead>
+                  <TableHead className="max-w-[200px]">Email</TableHead>
+                  <TableHead className="text-center w-16" title="First Email Sent">
+                    <Mail className="h-4 w-4 mx-auto" />
+                  </TableHead>
                   <TableHead>Captain</TableHead>
                   <TableHead>Status</TableHead>
-                  <TableHead>Assigned Restaurant</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
+                  <TableHead className="max-w-[180px]">Restaurant</TableHead>
+                  <TableHead className="text-right w-[140px]">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -716,8 +723,8 @@ export function PeopleManagement() {
                           </span>
                         </div>
                       </TableCell>
-                      <TableCell>
-                        <span className="text-sm text-foreground">
+                      <TableCell className="max-w-[200px]">
+                        <span className="text-sm text-foreground truncate block" title={participant.attendee_email}>
                           {participant.attendee_email}
                         </span>
                       </TableCell>
@@ -762,13 +769,13 @@ export function PeopleManagement() {
                           {participant.status.replace("_", " ")}
                         </Badge>
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="max-w-[180px]">
                         {assignedRestaurant ? (
                           <div className="flex flex-col">
-                            <span className="text-sm text-foreground">
+                            <span className="text-sm text-foreground truncate block" title={assignedRestaurant.name}>
                               {assignedRestaurant.name}
                             </span>
-                            <span className="text-xs text-muted-foreground">
+                            <span className="text-xs text-muted-foreground truncate block" title={assignedRestaurant.address}>
                               {assignedRestaurant.address}
                             </span>
                           </div>
@@ -847,7 +854,8 @@ export function PeopleManagement() {
                   );
                 })}
               </TableBody>
-            </Table>
+              </Table>
+            </div>
           )}
         </CardContent>
       </Card>

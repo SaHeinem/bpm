@@ -20,7 +20,7 @@ const randomShuffle = <T,>(items: T[]): T[] => {
   const shuffled = [...items]
   for (let index = shuffled.length - 1; index > 0; index -= 1) {
     const j = Math.floor(Math.random() * (index + 1))
-    ;[shuffled[index], shuffled[j]] = [shuffled[j], shuffled[index]]
+      ;[shuffled[index], shuffled[j]] = [shuffled[j], shuffled[index]]
   }
   return shuffled
 }
@@ -192,7 +192,7 @@ export function generateAssignmentCsv(rosters: RestaurantRoster[]): string {
           index === 0 ? roster.captain?.captain_phone ?? "" : "",
           participant.attendee_name,
           participant.attendee_email,
-          participant.pretix_id,
+          participant.pretix_id?.toString() ?? "",
           participant.status,
         ])
       })

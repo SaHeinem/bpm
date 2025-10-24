@@ -188,25 +188,6 @@ const getOccupancyBadgeStyles = (occupancy: number, capacity: number) => {
   return "bg-secondary text-secondary-foreground";
 };
 
-const formatMinutes = (value: number | null) => {
-  if (value === null || value === undefined) {
-    return "—";
-  }
-  return `${value} min`;
-};
-
-const formatDateTime = (value: string | null) => {
-  if (!value) {
-    return "—";
-  }
-  try {
-    const date = new Date(value);
-    return date.toLocaleString();
-  } catch {
-    return "—";
-  }
-};
-
 export function RestaurantManagement() {
   const { toast } = useToast();
   const {

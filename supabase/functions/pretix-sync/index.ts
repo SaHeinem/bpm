@@ -209,13 +209,17 @@ Deno.serve(async (req) => {
 
       if (existingParticipant) {
         // Update only if status needs to change or basic info changed
-        // Don't overwrite captain fields
-        const updates = {
+        // Don't overwrite captain fields or manually set statuses
+        const updates: any = {
           given_name: participantData.given_name,
           family_name: participantData.family_name,
           attendee_name: participantData.attendee_name,
           attendee_email: participantData.attendee_email,
-          ...(existingParticipant.status === 'cancelled' ? { status: 'registered' } : {}),
+        }
+
+        // Only update status if it hasn't been manually overridden
+        if (!existingParticipant.manual_status_override && existingParticipant.status === 'cancelled') {
+          updates.status = 'registered'
         }
 
         const { error: updateError } = await supabase
@@ -248,11 +252,12 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Step 4: Mark participants not in Pretix as cancelled
+    // Step 4: Mark participants not in Pretix as cancelled (only if not manually overridden)
     for (const pretixId of existingPretixIds) {
       if (!pretixIdsFromPretix.has(pretixId)) {
         const participant = existingParticipantsMap.get(pretixId)
-        if (participant && participant.status !== 'cancelled') {
+        // Only auto-cancel if status wasn't manually set and participant is not already cancelled
+        if (participant && participant.status !== 'cancelled' && !participant.manual_status_override) {
           const { error: cancelError } = await supabase
             .from('participants')
             .update({ status: 'cancelled' })
