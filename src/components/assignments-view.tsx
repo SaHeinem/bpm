@@ -87,15 +87,18 @@ export function AssignmentsView() {
   );
 
   const firstEmailByParticipant = useMemo(() => {
-    const map = new Map<string, { sentAt: string; emailType: string }>();
+    const map = new Map<string, { sentAt: string; emailType: string; formattedDate: string }>();
     emailLogs.forEach((log) => {
       const sentAt = log.sent_at ?? log.created_at;
       if (!sentAt) return;
       const stored = map.get(log.participant_id);
       if (!stored || new Date(sentAt).getTime() < new Date(stored.sentAt).getTime()) {
+        const date = new Date(sentAt);
+        const formattedDate = !Number.isNaN(date.getTime()) ? date.toLocaleString() : "";
         map.set(log.participant_id, {
           sentAt,
           emailType: log.email_type,
+          formattedDate,
         });
       }
     });
@@ -108,12 +111,36 @@ export function AssignmentsView() {
     [participants]
   );
 
+  // Detect duplicate emails
+  const duplicateEmails = useMemo(() => {
+    const emailCounts = new Map<string, number>();
+    participants.forEach((p) => {
+      const email = p.attendee_email.toLowerCase();
+      emailCounts.set(email, (emailCounts.get(email) || 0) + 1);
+    });
+    return new Set(
+      Array.from(emailCounts.entries())
+        .filter(([_, count]) => count > 1)
+        .map(([email]) => email)
+    );
+  }, [participants]);
+
   const nonCaptainParticipants = useMemo(
     () =>
       eligibleParticipants.filter(
         (participant) => !participant.is_table_captain
       ),
     [eligibleParticipants]
+  );
+
+  const excludedDuplicates = useMemo(
+    () =>
+      eligibleParticipants.filter(
+        (participant) =>
+          !participant.is_table_captain &&
+          duplicateEmails.has(participant.attendee_email.toLowerCase())
+      ),
+    [eligibleParticipants, duplicateEmails]
   );
 
   const assignmentsByParticipant = useMemo(() => {
@@ -475,6 +502,16 @@ export function AssignmentsView() {
           </TabsTrigger>
         </TabsList>
         <TabsContent value="people" className="space-y-4">
+          {excludedDuplicates.length > 0 && (
+            <Alert variant="destructive">
+              <AlertTriangle className="h-4 w-4" />
+              <AlertTitle>Duplicate Emails Excluded</AlertTitle>
+              <AlertDescription>
+                {excludedDuplicates.length} participant{excludedDuplicates.length > 1 ? 's' : ''} with duplicate email addresses {excludedDuplicates.length > 1 ? 'have' : 'has'} been excluded from assignment.
+                Please fix duplicate emails in the People page before generating assignments.
+              </AlertDescription>
+            </Alert>
+          )}
           <Card>
             <CardHeader>
               <CardTitle>Participants ({filteredPeople.length})</CardTitle>
@@ -508,11 +545,6 @@ export function AssignmentsView() {
                     : undefined;
                   const isCaptain = participant.is_table_captain;
                   const firstEmail = firstEmailByParticipant.get(participant.id);
-                  const firstEmailDate = firstEmail ? new Date(firstEmail.sentAt) : null;
-                  const firstEmailLabel =
-                    firstEmailDate && !Number.isNaN(firstEmailDate.getTime())
-                      ? firstEmailDate.toLocaleString()
-                      : null;
 
                   return (
                       <div
@@ -540,10 +572,10 @@ export function AssignmentsView() {
                                 Late joiner
                               </Badge>
                             )}
-                            {firstEmail && firstEmailLabel && (
+                            {firstEmail && firstEmail.formattedDate && (
                               <span
                                 className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-emerald-500/15"
-                                title={`First email (${firstEmail.emailType.replace("_", " ")}) sent ${firstEmailLabel}`}
+                                title={`First email (${firstEmail.emailType.replace("_", " ")}) sent ${firstEmail.formattedDate}`}
                               >
                                 <MailCheck className="h-3.5 w-3.5 text-emerald-500" />
                               </span>

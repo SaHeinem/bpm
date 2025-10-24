@@ -209,12 +209,16 @@ Deno.serve(async (req) => {
 
       if (existingParticipant) {
         // Update only if status needs to change or basic info changed
-        // Don't overwrite captain fields or manually set statuses
+        // Don't overwrite captain fields or manually set statuses/emails
         const updates: any = {
           given_name: participantData.given_name,
           family_name: participantData.family_name,
           attendee_name: participantData.attendee_name,
-          attendee_email: participantData.attendee_email,
+        }
+
+        // Only update email if it hasn't been manually overridden
+        if (!existingParticipant.manual_email_override) {
+          updates.attendee_email = participantData.attendee_email
         }
 
         // Only update status if it hasn't been manually overridden

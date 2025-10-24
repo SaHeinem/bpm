@@ -15,6 +15,7 @@ export interface ParticipantPayload {
   captain_preferred_contact?: string | null
   status?: Participant["status"]
   manual_status_override?: boolean
+  manual_email_override?: boolean
 }
 
 async function fetchParticipants(): Promise<Participant[]> {

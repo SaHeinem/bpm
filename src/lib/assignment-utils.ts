@@ -25,6 +25,22 @@ const randomShuffle = <T,>(items: T[]): T[] => {
   return shuffled
 }
 
+/**
+ * Detects duplicate email addresses in the participant list
+ */
+const getDuplicateEmails = (participants: Participant[]): Set<string> => {
+  const emailCounts = new Map<string, number>()
+  participants.forEach((p) => {
+    const email = p.attendee_email.toLowerCase()
+    emailCounts.set(email, (emailCounts.get(email) || 0) + 1)
+  })
+  return new Set(
+    Array.from(emailCounts.entries())
+      .filter(([_, count]) => count > 1)
+      .map(([email]) => email)
+  )
+}
+
 export function planCaptainAssignments(restaurants: Restaurant[], captains: Participant[]): CaptainAssignmentPlan[] {
   if (!restaurants.length) {
     return []
@@ -65,7 +81,15 @@ export function planParticipantAssignments(
     return { assignments: [], unassigned: [...participants] }
   }
 
-  const shuffledParticipants = randomShuffle(participants.filter((participant) => participant.status !== "cancelled"))
+  // Detect duplicate emails to exclude them from assignment
+  const duplicateEmails = getDuplicateEmails(participants)
+
+  const shuffledParticipants = randomShuffle(
+    participants.filter((participant) =>
+      participant.status !== "cancelled" &&
+      !duplicateEmails.has(participant.attendee_email.toLowerCase())
+    )
+  )
 
   const assignments: ParticipantAssignmentPlan[] = []
   const unassigned: Participant[] = []
@@ -77,8 +101,8 @@ export function planParticipantAssignments(
 
     // Sort pools prioritizing:
     // 1. Restaurants with free capacity (assigned < capacity) come first
-    // 2. Among those with free capacity, prefer ones with fewer assigned
-    // 3. For overbooking (assigned >= capacity), prefer ones with fewer assigned (fair distribution)
+    // 2. Among those with free capacity, prefer ones with lower occupancy ratio
+    // 3. For overbooking (assigned >= capacity), prefer ones with lower occupancy ratio (proportional distribution)
     // 4. Break ties by capacity (larger restaurants for fair distribution)
     const sortedPools = [...pools].sort((a, b) => {
       const aHasSpace = a.assigned < a.capacity
@@ -89,9 +113,13 @@ export function planParticipantAssignments(
         return aHasSpace ? -1 : 1
       }
 
-      // If both have space or both are full, prefer fewer assigned (fair distribution)
-      if (a.assigned !== b.assigned) {
-        return a.assigned - b.assigned
+      // Calculate occupancy ratios (handle zero capacity edge case)
+      const aRatio = a.capacity > 0 ? a.assigned / a.capacity : Infinity
+      const bRatio = b.capacity > 0 ? b.assigned / b.capacity : Infinity
+
+      // Prefer lower occupancy ratio for proportional distribution
+      if (Math.abs(aRatio - bRatio) > 0.001) {
+        return aRatio - bRatio
       }
 
       // Break ties by capacity (larger restaurants)

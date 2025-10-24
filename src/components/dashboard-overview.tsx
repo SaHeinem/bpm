@@ -51,7 +51,7 @@ export function DashboardOverview() {
   const activityLogger = useActivityLogger();
   const { participants } = useParticipants();
   const { restaurants } = useRestaurants();
-  const { assignments } = useAssignments();
+  const { assignments, clearAssignmentsMutation } = useAssignments();
   const { eventStatus, setEventStatusMutation } = useEventStatus();
   const { sendBulkEmailsMutation } = useEmails();
 
@@ -86,6 +86,30 @@ export function DashboardOverview() {
         (participant) => !participant.is_table_captain
       ),
     [assignableParticipants]
+  );
+
+  // Detect duplicate emails
+  const duplicateEmails = useMemo(() => {
+    const emailCounts = new Map<string, number>();
+    participants.forEach((p) => {
+      const email = p.attendee_email.toLowerCase();
+      emailCounts.set(email, (emailCounts.get(email) || 0) + 1);
+    });
+    return new Set(
+      Array.from(emailCounts.entries())
+        .filter(([_, count]) => count > 1)
+        .map(([email]) => email)
+    );
+  }, [participants]);
+
+  const excludedDuplicates = useMemo(
+    () =>
+      assignableParticipants.filter(
+        (participant) =>
+          !participant.is_table_captain &&
+          duplicateEmails.has(participant.attendee_email.toLowerCase())
+      ),
+    [assignableParticipants, duplicateEmails]
   );
 
   const unassignedCount = useMemo(() => {
@@ -266,14 +290,7 @@ export function DashboardOverview() {
 
       // Clear all existing assignments
       if (assignments.length > 0) {
-        const { error: clearError } = await supabase
-          .from("assignments")
-          .delete()
-          .in(
-            "id",
-            assignments.map((a) => a.id)
-          );
-        if (clearError) throw clearError;
+        await clearAssignmentsMutation.mutateAsync();
       }
 
       if (plannedAssignments.length) {
@@ -652,9 +669,14 @@ export function DashboardOverview() {
             {capacityShortfall && (
               <p>
                 There are {nonCaptainParticipants.length} assignable
-                participants but only {nonCaptainCapacity + restaurants.length}{" "}
+                participants{excludedDuplicates.length > 0 && ` (${nonCaptainParticipants.length - excludedDuplicates.length} with unique emails)`} but only {nonCaptainCapacity + restaurants.length}{" "}
                 seats for attendees. Overbooking will be distributed fairly
                 across restaurants.
+              </p>
+            )}
+            {excludedDuplicates.length > 0 && !capacityShortfall && (
+              <p className="text-amber-600">
+                {excludedDuplicates.length} participant{excludedDuplicates.length > 1 ? 's have' : ' has'} duplicate email addresses and will be excluded from assignment.
               </p>
             )}
             {captainShortfall && (

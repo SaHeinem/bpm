@@ -3,7 +3,19 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import Papa from "papaparse";
 import { z } from "zod";
-import { Mail, MailCheck, Pencil, Plus, Trash2, UploadCloud, X, UserX, UserCheck, RefreshCw } from "lucide-react";
+import {
+  Mail,
+  MailCheck,
+  Pencil,
+  Plus,
+  Trash2,
+  UploadCloud,
+  X,
+  UserX,
+  UserCheck,
+  RefreshCw,
+  AlertTriangle,
+} from "lucide-react";
 
 import { useParticipants } from "@/hooks/use-participants";
 import { useRestaurants } from "@/hooks/use-restaurants";
@@ -76,7 +88,7 @@ const participantSchema = z.object({
   is_table_captain: z.boolean(),
   captain_phone: z.string().trim().min(1).optional(),
   captain_preferred_contact: z
-    .enum(["email", "phone", "sms", "whatsapp", "telegram"])
+    .enum(["email", "phone", "sms", "whatsapp", "telegram", "signal"])
     .optional(),
   status: z.enum(["registered", "cancelled", "late_joiner"]),
 });
@@ -115,6 +127,7 @@ const initialParticipantValues: ParticipantFormValues = {
 
 type StatusFilter = "all" | ParticipantFormValues["status"];
 type CaptainFilter = "all" | "captain" | "attendee";
+type EmailFilter = "all" | "duplicates" | "unique";
 
 const statusBadgeStyles: Record<ParticipantFormValues["status"], string> = {
   registered: "bg-success/10 text-success",
@@ -144,6 +157,9 @@ export function PeopleManagement() {
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [captainFilter, setCaptainFilter] = useState<CaptainFilter>("all");
+  const [emailFilter, setEmailFilter] = useState<EmailFilter>("all");
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 50;
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const form = useForm<ParticipantFormValues>({
@@ -171,20 +187,40 @@ export function PeopleManagement() {
   }, [assignments, restaurants]);
 
   const firstEmailByParticipant = useMemo(() => {
-    const map = new Map<string, { sentAt: string; emailType: string }>();
+    const map = new Map<string, { sentAt: string; emailType: string; formattedDate: string }>();
     emailLogs.forEach((log) => {
       const sentAt = log.sent_at ?? log.created_at;
       if (!sentAt) return;
       const stored = map.get(log.participant_id);
-      if (!stored || new Date(sentAt).getTime() < new Date(stored.sentAt).getTime()) {
+      if (
+        !stored ||
+        new Date(sentAt).getTime() < new Date(stored.sentAt).getTime()
+      ) {
+        const date = new Date(sentAt);
+        const formattedDate = !Number.isNaN(date.getTime()) ? date.toLocaleString() : "";
         map.set(log.participant_id, {
           sentAt,
           emailType: log.email_type,
+          formattedDate,
         });
       }
     });
     return map;
   }, [emailLogs]);
+
+  // Detect duplicate emails (must be before filteredParticipants)
+  const duplicateEmails = useMemo(() => {
+    const emailCounts = new Map<string, number>();
+    participants.forEach((p) => {
+      const email = p.attendee_email.toLowerCase();
+      emailCounts.set(email, (emailCounts.get(email) || 0) + 1);
+    });
+    return new Set(
+      Array.from(emailCounts.entries())
+        .filter(([_, count]) => count > 1)
+        .map(([email]) => email)
+    );
+  }, [participants]);
 
   const filteredParticipants = useMemo(() => {
     return participants.filter((participant) => {
@@ -203,20 +239,33 @@ export function PeopleManagement() {
         captainFilter === "all" ||
         (captainFilter === "captain" && participant.is_table_captain) ||
         (captainFilter === "attendee" && !participant.is_table_captain);
+      const matchesEmail =
+        emailFilter === "all" ||
+        (emailFilter === "duplicates" &&
+          duplicateEmails.has(participant.attendee_email.toLowerCase())) ||
+        (emailFilter === "unique" &&
+          !duplicateEmails.has(participant.attendee_email.toLowerCase()));
 
-      return matchesSearch && matchesStatus && matchesCaptain;
+      return matchesSearch && matchesStatus && matchesCaptain && matchesEmail;
     });
-  }, [participants, searchTerm, statusFilter, captainFilter]);
+  }, [
+    participants,
+    searchTerm,
+    statusFilter,
+    captainFilter,
+    emailFilter,
+    duplicateEmails,
+  ]);
 
-  const totalRegistered = useMemo(
-    () =>
-      participants.filter(
-        (participant) =>
-          participant.status === "registered" ||
-          participant.status === "late_joiner"
-      ).length,
-    [participants]
-  );
+  const eligibleForAssignment = useMemo(() => {
+    return participants.filter(
+      (participant) =>
+        (participant.status === "registered" ||
+          participant.status === "late_joiner") &&
+        !participant.is_table_captain &&
+        !duplicateEmails.has(participant.attendee_email.toLowerCase())
+    ).length;
+  }, [participants, duplicateEmails]);
 
   const totalCaptains = useMemo(
     () =>
@@ -226,6 +275,26 @@ export function PeopleManagement() {
       ).length,
     [participants]
   );
+
+  const participantsWithDuplicateEmails = useMemo(() => {
+    return participants.filter((p) =>
+      duplicateEmails.has(p.attendee_email.toLowerCase())
+    ).length;
+  }, [participants, duplicateEmails]);
+
+  // Paginated participants
+  const paginatedParticipants = useMemo(() => {
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    const endIndex = startIndex + itemsPerPage;
+    return filteredParticipants.slice(startIndex, endIndex);
+  }, [filteredParticipants, currentPage, itemsPerPage]);
+
+  const totalPages = Math.ceil(filteredParticipants.length / itemsPerPage);
+
+  // Reset page when filters change
+  useMemo(() => {
+    setCurrentPage(1);
+  }, [searchTerm, statusFilter, captainFilter, emailFilter]);
 
   const openDialog = (mode: DialogMode, participantId?: string) => {
     if (mode === "edit" && participantId) {
@@ -275,6 +344,13 @@ export function PeopleManagement() {
           description: `${values.attendee_name} has been added.`,
         });
       } else if (dialogState.mode === "edit" && dialogState.participantId) {
+        const existingParticipant = participants.find(
+          (p) => p.id === dialogState.participantId
+        );
+        const emailChanged =
+          existingParticipant &&
+          existingParticipant.attendee_email !== values.attendee_email;
+
         await editParticipant.mutateAsync({
           id: dialogState.participantId,
           payload: {
@@ -288,6 +364,8 @@ export function PeopleManagement() {
               : null,
             captain_preferred_contact: values.captain_preferred_contact ?? null,
             status: values.status,
+            // Mark email as manually overridden if it was changed
+            ...(emailChanged ? { manual_email_override: true } : {}),
           },
         });
         toast({
@@ -331,7 +409,8 @@ export function PeopleManagement() {
     const participant = participants.find((item) => item.id === participantId);
     if (!participant) return;
 
-    const newStatus = participant.status === "cancelled" ? "registered" : "cancelled";
+    const newStatus =
+      participant.status === "cancelled" ? "registered" : "cancelled";
 
     try {
       // Update participant status and mark as manually overridden
@@ -366,8 +445,13 @@ export function PeopleManagement() {
       }
 
       toast({
-        title: newStatus === "cancelled" ? "Participant cancelled" : "Participant reactivated",
-        description: `${participant.attendee_name} has been ${newStatus === "cancelled" ? "cancelled" : "reactivated"}.`,
+        title:
+          newStatus === "cancelled"
+            ? "Participant cancelled"
+            : "Participant reactivated",
+        description: `${participant.attendee_name} has been ${
+          newStatus === "cancelled" ? "cancelled" : "reactivated"
+        }.`,
       });
     } catch (error) {
       console.error(error);
@@ -399,7 +483,9 @@ export function PeopleManagement() {
       toast({
         title: "Sync failed",
         description:
-          error instanceof Error ? error.message : "Please check your Pretix configuration.",
+          error instanceof Error
+            ? error.message
+            : "Please check your Pretix configuration.",
         variant: "destructive",
       });
     }
@@ -468,9 +554,16 @@ export function PeopleManagement() {
 
       if (result.failed === 0) {
         const duplicatesInCsv = totalRows - uniqueParticipants;
-        const message = duplicatesInCsv > 0
-          ? `${result.succeeded} participant${result.succeeded === 1 ? "" : "s"} processed from ${totalRows} CSV rows (${duplicatesInCsv} duplicate${duplicatesInCsv === 1 ? "" : "s"} in CSV).`
-          : `${result.succeeded} participant${result.succeeded === 1 ? "" : "s"} imported successfully.`;
+        const message =
+          duplicatesInCsv > 0
+            ? `${result.succeeded} participant${
+                result.succeeded === 1 ? "" : "s"
+              } processed from ${totalRows} CSV rows (${duplicatesInCsv} duplicate${
+                duplicatesInCsv === 1 ? "" : "s"
+              } in CSV).`
+            : `${result.succeeded} participant${
+                result.succeeded === 1 ? "" : "s"
+              } imported successfully.`;
 
         toast({
           title: "Import successful",
@@ -479,21 +572,33 @@ export function PeopleManagement() {
       } else if (result.succeeded === 0) {
         toast({
           title: "Import failed",
-          description: `All ${result.failed} participant${result.failed === 1 ? "" : "s"} failed to import. ${result.errors[0]?.reason || ""}`,
+          description: `All ${result.failed} participant${
+            result.failed === 1 ? "" : "s"
+          } failed to import. ${result.errors[0]?.reason || ""}`,
           variant: "destructive",
         });
       } else {
-        const duplicateCount = result.errors.filter(e =>
-          e.reason.includes("duplicate key") || e.reason.includes("already exists")
+        const duplicateCount = result.errors.filter(
+          (e) =>
+            e.reason.includes("duplicate key") ||
+            e.reason.includes("already exists")
         ).length;
         const duplicateEmails = result.errors
-          .filter(e => e.reason.includes("duplicate key") || e.reason.includes("already exists"))
+          .filter(
+            (e) =>
+              e.reason.includes("duplicate key") ||
+              e.reason.includes("already exists")
+          )
           .slice(0, 3)
-          .map(e => e.email);
+          .map((e) => e.email);
 
         toast({
           title: "Partial import",
-          description: `${result.succeeded} imported, ${result.failed} skipped (${duplicateCount} duplicate${duplicateCount === 1 ? "" : "s"}: ${duplicateEmails.join(", ")}${duplicateCount > 3 ? "..." : ""})`,
+          description: `${result.succeeded} imported, ${
+            result.failed
+          } skipped (${duplicateCount} duplicate${
+            duplicateCount === 1 ? "" : "s"
+          }: ${duplicateEmails.join(", ")}${duplicateCount > 3 ? "..." : ""})`,
           variant: "default",
         });
       }
@@ -530,8 +635,15 @@ export function PeopleManagement() {
             onClick={handleSyncFromPretix}
             disabled={syncFromPretix.isPending}
           >
-            <RefreshCw className={cn("h-4 w-4", syncFromPretix.isPending && "animate-spin")} />
-            <span className="hidden sm:inline">{syncFromPretix.isPending ? "Syncing..." : "Sync from Pretix"}</span>
+            <RefreshCw
+              className={cn(
+                "h-4 w-4",
+                syncFromPretix.isPending && "animate-spin"
+              )}
+            />
+            <span className="hidden sm:inline">
+              {syncFromPretix.isPending ? "Syncing..." : "Sync from Pretix"}
+            </span>
             <span className="sm:hidden">Sync</span>
           </Button>
           <Button
@@ -558,7 +670,7 @@ export function PeopleManagement() {
         </div>
       </div>
 
-      <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 md:grid-cols-4">
+      <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-5">
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium">
@@ -575,11 +687,11 @@ export function PeopleManagement() {
             <CardTitle className="text-sm font-medium">
               Eligible Participants
             </CardTitle>
-            <CardDescription>Registered & late joiners</CardDescription>
+            <CardDescription>Can be assigned to tables</CardDescription>
           </CardHeader>
           <CardContent>
             <p className="text-2xl font-semibold text-success">
-              {totalRegistered}
+              {eligibleForAssignment}
             </p>
           </CardContent>
         </Card>
@@ -605,13 +717,37 @@ export function PeopleManagement() {
             </p>
           </CardContent>
         </Card>
+        <Card
+          className={cn(
+            participantsWithDuplicateEmails > 0 && "border-amber-500/50"
+          )}
+        >
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium">
+              Duplicate Emails
+            </CardTitle>
+            <CardDescription>Excluded from assignment</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <p
+              className={cn(
+                "text-2xl font-semibold",
+                participantsWithDuplicateEmails > 0
+                  ? "text-amber-600"
+                  : "text-muted-foreground"
+              )}
+            >
+              {participantsWithDuplicateEmails}
+            </p>
+          </CardContent>
+        </Card>
       </div>
 
       <Card>
         <CardHeader>
           <CardTitle>Filters</CardTitle>
           <CardDescription>
-            Filter by status or captain availability.
+            Filter by status, captain availability, or email duplicates.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -661,6 +797,19 @@ export function PeopleManagement() {
                 <SelectItem value="attendee">Attendees only</SelectItem>
               </SelectContent>
             </Select>
+            <Select
+              value={emailFilter}
+              onValueChange={(value: EmailFilter) => setEmailFilter(value)}
+            >
+              <SelectTrigger className="md:max-w-xs">
+                <SelectValue placeholder="Email filter" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All emails</SelectItem>
+                <SelectItem value="duplicates">Duplicates only</SelectItem>
+                <SelectItem value="unique">Unique only</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
         </CardContent>
       </Card>
@@ -684,177 +833,257 @@ export function PeopleManagement() {
           ) : (
             <div className="w-full overflow-x-auto">
               <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead className="max-w-[200px]">Email</TableHead>
-                  <TableHead className="text-center w-16" title="First Email Sent">
-                    <Mail className="h-4 w-4 mx-auto" />
-                  </TableHead>
-                  <TableHead>Captain</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="max-w-[180px]">Restaurant</TableHead>
-                  <TableHead className="text-right w-[140px]">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredParticipants.map((participant) => {
-                  const assignmentRestaurantId =
-                    assignmentByParticipant[participant.id];
-                  const assignedRestaurant = assignmentRestaurantId
-                    ? restaurantById.get(assignmentRestaurantId)
-                    : undefined;
-                  const firstEmail = firstEmailByParticipant.get(participant.id);
-                  const firstEmailDate = firstEmail ? new Date(firstEmail.sentAt) : null;
-                  const firstEmailLabel =
-                    firstEmailDate && !Number.isNaN(firstEmailDate.getTime())
-                      ? firstEmailDate.toLocaleString()
-                      : null;
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Name</TableHead>
+                    <TableHead className="max-w-[200px]">Email</TableHead>
+                    <TableHead
+                      className="text-center w-16"
+                      title="First Email Sent"
+                    >
+                      <Mail className="h-4 w-4 mx-auto" />
+                    </TableHead>
+                    <TableHead>Captain</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead className="max-w-[180px]">Restaurant</TableHead>
+                    <TableHead className="text-right w-[140px]">
+                      Actions
+                    </TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {paginatedParticipants.map((participant) => {
+                    const assignmentRestaurantId =
+                      assignmentByParticipant[participant.id];
+                    const assignedRestaurant = assignmentRestaurantId
+                      ? restaurantById.get(assignmentRestaurantId)
+                      : undefined;
+                    const firstEmail = firstEmailByParticipant.get(
+                      participant.id
+                    );
 
-                  return (
-                    <TableRow key={participant.id}>
-                      <TableCell>
-                        <div className="flex flex-col">
-                          <span className="text-sm font-medium text-foreground">
-                            {participant.attendee_name}
-                          </span>
-                          <span className="text-xs text-muted-foreground">
-                            {participant.given_name} {participant.family_name}
-                          </span>
-                        </div>
-                      </TableCell>
-                      <TableCell className="max-w-[200px]">
-                        <span className="text-sm text-foreground truncate block" title={participant.attendee_email}>
-                          {participant.attendee_email}
-                        </span>
-                      </TableCell>
-                      <TableCell className="text-center">
-                        {firstEmail && firstEmailLabel ? (
-                          <span
-                            className="inline-flex items-center justify-center rounded-full bg-emerald-500/15 p-1"
-                            title={`First email (${firstEmail.emailType.replace("_", " ")}) sent ${firstEmailLabel}`}
-                          >
-                            <MailCheck className="h-4 w-4 text-emerald-500" />
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center justify-center text-muted-foreground" title="No email sent yet">
-                            <Mail className="h-4 w-4" />
-                          </span>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        {participant.is_table_captain ? (
-                          <Badge
-                            variant="secondary"
-                            className="bg-primary/10 text-primary"
-                          >
-                            Captain
-                          </Badge>
-                        ) : (
-                          <Badge variant="outline">Attendee</Badge>
-                        )}
-                        {participant.captain_phone && (
-                          <p className="mt-1 text-xs text-muted-foreground">
-                            {participant.captain_phone}
-                          </p>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        <Badge
-                          className={cn(
-                            "px-2 py-1 text-xs",
-                            statusBadgeStyles[participant.status]
-                          )}
-                        >
-                          {participant.status.replace("_", " ")}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="max-w-[180px]">
-                        {assignedRestaurant ? (
+                    return (
+                      <TableRow key={participant.id}>
+                        <TableCell>
                           <div className="flex flex-col">
-                            <span className="text-sm text-foreground truncate block" title={assignedRestaurant.name}>
-                              {assignedRestaurant.name}
+                            <span className="text-sm font-medium text-foreground">
+                              {participant.attendee_name}
                             </span>
-                            <span className="text-xs text-muted-foreground truncate block" title={assignedRestaurant.address}>
-                              {assignedRestaurant.address}
+                            <span className="text-xs text-muted-foreground">
+                              {participant.given_name} {participant.family_name}
                             </span>
                           </div>
-                        ) : (
-                          <span className="text-xs text-muted-foreground">
-                            Unassigned
-                          </span>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex items-center justify-end gap-2">
-                          <ParticipantCommentsModal
-                            participantId={participant.id}
-                            participantName={participant.attendee_name}
-                          />
-                          {participant.status === "cancelled" ? (
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => handleToggleStatus(participant.id)}
-                              title="Reactivate participant"
+                        </TableCell>
+                        <TableCell className="max-w-[200px]">
+                          <div className="flex items-center gap-2">
+                            <span
+                              className="text-sm text-foreground truncate block"
+                              title={participant.attendee_email}
                             >
-                              <UserCheck className="h-4 w-4 text-success" />
-                            </Button>
+                              {participant.attendee_email}
+                            </span>
+                            {duplicateEmails.has(
+                              participant.attendee_email.toLowerCase()
+                            ) && (
+                              <span title="Duplicate email - multiple participants share this address">
+                                <AlertTriangle className="h-4 w-4 text-amber-500 flex-shrink-0" />
+                              </span>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-center">
+                          {firstEmail && firstEmail.formattedDate ? (
+                            <span
+                              className="inline-flex items-center justify-center rounded-full bg-emerald-500/15 p-1"
+                              title={`First email (${firstEmail.emailType.replace(
+                                "_",
+                                " "
+                              )}) sent ${firstEmail.formattedDate}`}
+                            >
+                              <MailCheck className="h-4 w-4 text-emerald-500" />
+                            </span>
                           ) : (
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => handleToggleStatus(participant.id)}
-                              title="Cancel participant"
+                            <span
+                              className="inline-flex items-center justify-center text-muted-foreground"
+                              title="No email sent yet"
                             >
-                              <UserX className="h-4 w-4 text-warning" />
-                            </Button>
+                              <Mail className="h-4 w-4" />
+                            </span>
                           )}
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => openDialog("edit", participant.id)}
+                        </TableCell>
+                        <TableCell>
+                          {participant.is_table_captain ? (
+                            <Badge
+                              variant="secondary"
+                              className="bg-primary/10 text-primary"
+                            >
+                              Captain
+                            </Badge>
+                          ) : (
+                            <Badge variant="outline">Attendee</Badge>
+                          )}
+                          {participant.captain_phone && (
+                            <p className="mt-1 text-xs text-muted-foreground">
+                              {participant.captain_phone}
+                            </p>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <Badge
+                            className={cn(
+                              "px-2 py-1 text-xs",
+                              statusBadgeStyles[participant.status]
+                            )}
                           >
-                            <Pencil className="h-4 w-4" />
-                          </Button>
-                          <AlertDialog>
-                            <AlertDialogTrigger asChild>
+                            {participant.status.replace("_", " ")}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="max-w-[180px]">
+                          {assignedRestaurant ? (
+                            <div className="flex flex-col">
+                              <span
+                                className="text-sm text-foreground truncate block"
+                                title={assignedRestaurant.name}
+                              >
+                                {assignedRestaurant.name}
+                              </span>
+                              <span
+                                className="text-xs text-muted-foreground truncate block"
+                                title={assignedRestaurant.address}
+                              >
+                                {assignedRestaurant.address}
+                              </span>
+                            </div>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">
+                              Unassigned
+                            </span>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex items-center justify-end gap-2">
+                            <ParticipantCommentsModal
+                              participantId={participant.id}
+                              participantName={participant.attendee_name}
+                            />
+                            {participant.status === "cancelled" ? (
                               <Button
                                 variant="ghost"
                                 size="icon"
-                                className="text-destructive"
+                                onClick={() =>
+                                  handleToggleStatus(participant.id)
+                                }
+                                title="Reactivate participant"
                               >
-                                <Trash2 className="h-4 w-4" />
+                                <UserCheck className="h-4 w-4 text-success" />
                               </Button>
-                            </AlertDialogTrigger>
-                            <AlertDialogContent>
-                              <AlertDialogHeader>
-                                <AlertDialogTitle>
-                                  Remove participant?
-                                </AlertDialogTitle>
-                                <AlertDialogDescription>
-                                  They will be removed from assignments and
-                                  lists. Continue?
-                                </AlertDialogDescription>
-                              </AlertDialogHeader>
-                              <AlertDialogFooter>
-                                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                <AlertDialogAction
-                                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                                  onClick={() => handleDelete(participant.id)}
+                            ) : (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() =>
+                                  handleToggleStatus(participant.id)
+                                }
+                                title="Cancel participant"
+                              >
+                                <UserX className="h-4 w-4 text-warning" />
+                              </Button>
+                            )}
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => openDialog("edit", participant.id)}
+                            >
+                              <Pencil className="h-4 w-4" />
+                            </Button>
+                            <AlertDialog>
+                              <AlertDialogTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="text-destructive"
                                 >
-                                  Delete
-                                </AlertDialogAction>
-                              </AlertDialogFooter>
-                            </AlertDialogContent>
-                          </AlertDialog>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </AlertDialogTrigger>
+                              <AlertDialogContent>
+                                <AlertDialogHeader>
+                                  <AlertDialogTitle>
+                                    Remove participant?
+                                  </AlertDialogTitle>
+                                  <AlertDialogDescription>
+                                    They will be removed from assignments and
+                                    lists. Continue?
+                                  </AlertDialogDescription>
+                                </AlertDialogHeader>
+                                <AlertDialogFooter>
+                                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                  <AlertDialogAction
+                                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                    onClick={() => handleDelete(participant.id)}
+                                  >
+                                    Delete
+                                  </AlertDialogAction>
+                                </AlertDialogFooter>
+                              </AlertDialogContent>
+                            </AlertDialog>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
               </Table>
+            </div>
+          )}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between gap-2 pt-4 border-t">
+              <div className="text-sm text-muted-foreground">
+                Showing {(currentPage - 1) * itemsPerPage + 1} to {Math.min(currentPage * itemsPerPage, filteredParticipants.length)} of {filteredParticipants.length} participants
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                  disabled={currentPage === 1}
+                >
+                  Previous
+                </Button>
+                <div className="flex items-center gap-1">
+                  {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                    let pageNum;
+                    if (totalPages <= 5) {
+                      pageNum = i + 1;
+                    } else if (currentPage <= 3) {
+                      pageNum = i + 1;
+                    } else if (currentPage >= totalPages - 2) {
+                      pageNum = totalPages - 4 + i;
+                    } else {
+                      pageNum = currentPage - 2 + i;
+                    }
+                    return (
+                      <Button
+                        key={pageNum}
+                        variant={currentPage === pageNum ? "default" : "outline"}
+                        size="sm"
+                        onClick={() => setCurrentPage(pageNum)}
+                        className="w-10"
+                      >
+                        {pageNum}
+                      </Button>
+                    );
+                  })}
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                  disabled={currentPage === totalPages}
+                >
+                  Next
+                </Button>
+              </div>
             </div>
           )}
         </CardContent>
@@ -1030,6 +1259,7 @@ export function PeopleManagement() {
                           <SelectItem value="sms">SMS</SelectItem>
                           <SelectItem value="whatsapp">WhatsApp</SelectItem>
                           <SelectItem value="telegram">Telegram</SelectItem>
+                          <SelectItem value="signal">Signal</SelectItem>
                         </SelectContent>
                       </Select>
                       <FormMessage />

@@ -39,7 +39,7 @@ async function removeAssignment(participantId: string): Promise<void> {
 }
 
 async function clearAllAssignments(): Promise<void> {
-  const { error } = await supabase.from("assignments").delete().neq("participant_id", "")
+  const { error } = await supabase.from("assignments").delete().not("id", "is", null)
   if (error) {
     throw error
   }
