@@ -43,3 +43,6 @@ enabled = true
 [functions]
 [functions.send-email]
 verify_jwt = false
+
+[functions.pretix-sync]
+verify_jwt = false

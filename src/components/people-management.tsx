@@ -3,7 +3,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import Papa from "papaparse";
 import { z } from "zod";
-import { Mail, MailCheck, Pencil, Plus, Trash2, UploadCloud, X, UserX, UserCheck } from "lucide-react";
+import { Mail, MailCheck, Pencil, Plus, Trash2, UploadCloud, X, UserX, UserCheck, RefreshCw } from "lucide-react";
 
 import { useParticipants } from "@/hooks/use-participants";
 import { useRestaurants } from "@/hooks/use-restaurants";
@@ -130,6 +130,7 @@ export function PeopleManagement() {
     editParticipant,
     removeParticipant,
     bulkImportParticipants,
+    syncFromPretix,
   } = useParticipants();
   const { restaurants, editRestaurant } = useRestaurants();
   const { assignments, unassignMutation } = useAssignments();
@@ -382,6 +383,27 @@ export function PeopleManagement() {
     fileInputRef.current?.click();
   };
 
+  const handleSyncFromPretix = async () => {
+    try {
+      const result = await syncFromPretix.mutateAsync();
+      toast({
+        title: "Sync completed",
+        description: `New: ${result.newParticipants}, Updated: ${result.updatedParticipants}, Cancelled: ${result.cancelledParticipants}`,
+      });
+      if (result.errors.length > 0) {
+        console.error("Sync errors:", result.errors);
+      }
+    } catch (error) {
+      console.error(error);
+      toast({
+        title: "Sync failed",
+        description:
+          error instanceof Error ? error.message : "Please check your Pretix configuration.",
+        variant: "destructive",
+      });
+    }
+  };
+
   const handleFileChange: React.ChangeEventHandler<HTMLInputElement> = async (
     event
   ) => {
@@ -501,6 +523,15 @@ export function PeopleManagement() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
+          <Button
+            variant="outline"
+            className="gap-2 bg-transparent"
+            onClick={handleSyncFromPretix}
+            disabled={syncFromPretix.isPending}
+          >
+            <RefreshCw className={cn("h-4 w-4", syncFromPretix.isPending && "animate-spin")} />
+            {syncFromPretix.isPending ? "Syncing..." : "Sync from Pretix"}
+          </Button>
           <Button
             variant="outline"
             className="gap-2 bg-transparent"

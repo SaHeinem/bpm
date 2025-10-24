@@ -2,8 +2,10 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { supabase } from "@/services/supabase"
 import { queryKeys } from "@/lib/query-keys"
 import type { Participant } from "@/types/database"
+import { syncParticipantsFromPretix } from "@/lib/pretix-sync"
 
 export interface ParticipantPayload {
+  pretix_id?: number | null
   given_name: string
   family_name: string
   attendee_name: string
@@ -64,13 +66,16 @@ async function bulkUpsertParticipants(payload: ParticipantPayload[]): Promise<Bu
 
   // Process each participant individually to handle conflicts gracefully
   for (const participant of payload) {
+    // Use pretix_id as conflict key if available, otherwise fall back to email
+    const conflictKey = participant.pretix_id ? "pretix_id" : "attendee_email"
+
     const { error } = await supabase.from("participants").upsert(
       {
         status: participant.status ?? "registered",
         ...participant,
       },
       {
-        onConflict: "attendee_email",
+        onConflict: conflictKey,
         ignoreDuplicates: false,
       },
     )
@@ -126,6 +131,13 @@ export function useParticipants() {
     },
   })
 
+  const syncFromPretix = useMutation({
+    mutationFn: syncParticipantsFromPretix,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.participants.all })
+    },
+  })
+
   return {
     participants: participantsQuery.data ?? [],
     isLoading: participantsQuery.isLoading,
@@ -134,5 +146,6 @@ export function useParticipants() {
     editParticipant,
     removeParticipant,
     bulkImportParticipants,
+    syncFromPretix,
   }
 }

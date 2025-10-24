@@ -19,6 +19,7 @@ export interface Restaurant {
 
 export interface Participant {
   id: string
+  pretix_id: number | null
   given_name: string
   family_name: string
   attendee_name: string
